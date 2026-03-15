@@ -1,0 +1,20 @@
+{
+  "name": "gmail",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@gongrzhe/server-gmail-autoauth-mcp": "^1.1.11",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@playwright/mcp": "^0.0.68",
+    "ghost-cursor-playwright": "^2.1.0",
+    "rebrowser-playwright": "^1.52.0",
+    "ws": "^8.19.0"
+  }
+}

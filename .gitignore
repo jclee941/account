@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.*
+
+# Runtime artifacts
+screenshots/
+screenshots-adb/
+ui-dumps-adb/
+.gmail-creator-data/
+.venv-mcp/
+
+# Secrets
+gcp-oauth.keys.json
+accounts.csv
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# OpenCode
+.opencode/
+.sisyphus/
