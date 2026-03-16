@@ -19,7 +19,7 @@ Gmail automation workspace. Node.js ESM using Playwright/Rebrowser + 5sim for ac
 │   └── verify-age.mjs             # age verification via 5sim SMS (814L)
 ├── antigravity/                   # Antigravity IDE auth & verification
 │   ├── antigravity-auth.mjs       # Antigravity OAuth + SMS verification pipeline (710L)
-│   ├── antigravity-pipeline.mjs   # End-to-end account activation orchestrator (727L)
+│   ├── antigravity-pipeline.mjs   # End-to-end account activation orchestrator (755L)
 │   ├── inject-vscdb-token.mjs     # VSCDB protobuf token injection (467L)
 │   ├── manual-token-acquire.mjs   # Manual-assisted OAuth token acquisition (286L)
 │   └── unlock-features.mjs        # 5sim SMS feature unlock for Antigravity (757L)

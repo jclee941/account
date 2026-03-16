@@ -38,8 +38,9 @@ const ACQUIRE_SCRIPT = path.join(import.meta.dirname, 'manual-token-acquire.mjs'
 const AUTO_AUTH_SCRIPT = path.join(import.meta.dirname, 'antigravity-auth.mjs');
 const UNLOCK_SCRIPT = path.join(import.meta.dirname, 'unlock-features.mjs');
 const ACCOUNTS_CSV = path.join(ROOT_DIR, 'accounts.csv');
+const AUTO_AUTH_RESULTS = path.join(import.meta.dirname, 'antigravity-auth-results.json');
 const ISO_TS_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const USERNAME_START_RE = /^(qws942|qws943)\d{2},/;
+const ROW_START_RE = /^[a-z0-9._-]+,[a-z0-9._+-]+@[a-z0-9.-]+,/i;
 
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ function parseAccountsCsv(csvContent) {
     const trimmed = line.trimEnd();
     if (!trimmed && !current) continue;
 
-    const startsNewUsername = USERNAME_START_RE.test(trimmed);
+    const startsNewUsername = ROW_START_RE.test(trimmed);
     if (startsNewUsername && current && !ISO_TS_RE.test(current)) {
       logicalRows.push(current);
       current = trimmed;
@@ -171,7 +172,7 @@ function importAccountsFromCsv() {
 
   const csvContent = readFileSync(ACCOUNTS_CSV, 'utf-8');
   const parsedRows = parseAccountsCsv(csvContent);
-  const successRows = parsedRows.filter((row) => row.status === 'success' && row.email);
+  const successRows = parsedRows.filter((row) => /^(success|created(:\w+)?)$/.test(row.status) && row.email);
 
   const data = loadAccounts() || createDefaultAccountsData();
   data.accounts ||= [];
@@ -258,6 +259,20 @@ async function acquireTokensAuto(emails, apiKey, region) {
 
     child.on('close', (code) => {
       if (code === 0) {
+        if (existsSync(AUTO_AUTH_RESULTS)) {
+          try {
+            const results = JSON.parse(readFileSync(AUTO_AUTH_RESULTS, 'utf-8'));
+            for (const result of results) {
+              if (result.success && result.refreshToken) {
+                updateAccountToken(result.email, result.accessToken, result.refreshToken);
+              }
+            }
+          } catch (err) {
+            log('⚠️', `Failed to read automated auth results: ${err.message}`);
+          }
+        } else {
+          log('⚠️', `Automated auth results file not found: ${AUTO_AUTH_RESULTS}`);
+        }
         resolve({ success: true });
       } else {
         reject(new Error(`Automated token acquisition exited with code ${code}`));
@@ -436,8 +451,21 @@ async function main() {
     const account = getAccountByEmail(data, email);
 
     if (!account) {
-      log('❌', `${email}: not found in accounts file`);
-      validationResults[email] = { valid: false, error: 'not_found' };
+      log('📝', `${email}: not in accounts file — creating pending entry`);
+      const data = loadAccounts() || createDefaultAccountsData();
+      data.accounts.push({
+        email,
+        refreshToken: '',
+        addedAt: Date.now(),
+        lastUsed: 0,
+        enabled: true,
+        fingerprint: null,
+        cachedQuota: {},
+        status: 'pending-token',
+      });
+      saveAccounts(data);
+      validationResults[email] = { valid: false, error: 'new_account' };
+      needsNewToken.push(email);
       continue;
     }
 
