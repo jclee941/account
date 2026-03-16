@@ -25,11 +25,10 @@ import { execSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { CLIENT_ID, CLIENT_SECRET, getArg, validateRefreshToken } from '../lib/antigravity-shared.mjs';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const CLIENT_ID = '<REDACTED>';
-const CLIENT_SECRET = '<REDACTED>';
 const ACCOUNTS_FILE = path.join(os.homedir(), '.config/opencode/antigravity-accounts.json');
 const VSCDB_PATH = path.join(os.homedir(), '.config/Antigravity/User/globalStorage/state.vscdb');
 const ROOT_DIR = path.join(import.meta.dirname, '..');
@@ -40,13 +39,9 @@ const ACQUIRE_SCRIPT = path.join(import.meta.dirname, 'manual-token-acquire.mjs'
 
 const args = process.argv.slice(2);
 
-function getArg(name, fallback) {
-  const idx = args.indexOf(`--${name}`);
-  return idx !== -1 && args[idx + 1] ? args[idx + 1] : fallback;
-}
 
-const ACCOUNT_LIST = (getArg('accounts', '') || getArg('account', '')).split(',').map(s => s.trim()).filter(Boolean);
-const API_KEY = getArg('api-key', process.env.FIVESIM_API_KEY || '');
+const ACCOUNT_LIST = (getArg(args, 'accounts', '') || getArg(args, 'account', '')).split(',').map(s => s.trim()).filter(Boolean);
+const API_KEY = getArg(args, 'api-key', process.env.FIVESIM_API_KEY || '');
 const VALIDATE_ONLY = args.includes('--validate-only');
 const SKIP_ACQUIRE = args.includes('--skip-acquire');
 const SKIP_INJECT = args.includes('--skip-inject');
@@ -99,41 +94,6 @@ function getAccountByEmail(data, email) {
 
 // ─── Step 1: Token Validation ────────────────────────────────────────────────
 
-async function validateRefreshToken(refreshToken) {
-  if (!refreshToken) return { valid: false, error: 'no_token' };
-
-  try {
-    const resp = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }),
-    });
-
-    const body = await resp.json();
-
-    if (resp.ok && body.access_token) {
-      return {
-        valid: true,
-        accessToken: body.access_token,
-        expiresIn: body.expires_in,
-        scope: body.scope,
-      };
-    }
-
-    return {
-      valid: false,
-      error: body.error || 'unknown',
-      description: body.error_description || '',
-    };
-  } catch (err) {
-    return { valid: false, error: 'network', description: err.message };
-  }
-}
 
 // ─── Step 2: Token Acquisition ───────────────────────────────────────────────
 
@@ -416,6 +376,58 @@ async function main() {
     console.log('');
   }
 
+
+  let verifyFailed = false;
+  // ── Phase 6: Post-Login Verification (SMS via 5sim) ──
+  if (!SKIP_VERIFY) {
+    console.log('');
+    console.log('── Phase 6: Post-Login Verification ─────────────────────');
+    console.log('');
+
+    if (DRY_RUN) {
+      log('🏁', 'DRY RUN: Would run post-login verification');
+    } else if (!API_KEY) {
+      log('⚠️', 'No 5sim API key — skipping post-login verification');
+      log('📋', 'Pass --api-key <KEY> or set FIVESIM_API_KEY to enable SMS verification');
+    } else {
+      const validEmails = ACCOUNT_LIST.filter(e => validationResults[e]?.valid);
+      if (validEmails.length > 0) {
+        log('🔐', `Running SMS verification for ${validEmails.length} account(s)`);
+        const authScript = path.join(import.meta.dirname, 'antigravity-auth.mjs');
+        try {
+          const authArgs = [
+            authScript,
+            '--batch', validEmails.join(','),
+            '--api-key', API_KEY,
+          ];
+          const result = await new Promise((resolve, reject) => {
+            const child = spawn('node', authArgs, {
+              stdio: 'inherit',
+              env: { ...process.env, DISPLAY: process.env.DISPLAY || ':55' },
+            });
+            child.on('close', (code) => resolve({ success: code === 0, code }));
+            child.on('error', (err) => reject(err));
+          });
+          if (result.success) {
+            log('✅', 'Post-login verification completed');
+          } else {
+            verifyFailed = true;
+            log('⚠️', `Verification exited with code ${result.code} — some accounts may need manual attention`);
+          }
+        } catch (err) {
+          verifyFailed = true;
+          log('❌', `Verification failed to start: ${err.message}`);
+        }
+      } else {
+        log('⚠️', 'No valid accounts — skipping verification');
+      }
+    }
+    console.log('');
+  } else {
+    log('⏭️', 'Skipping post-login verification (--skip-verify)');
+    console.log('');
+  }
+
   // ── Summary ──
   console.log('═══════════════════════════════════════════════════════════');
   console.log('  Pipeline Summary');
@@ -427,7 +439,8 @@ async function main() {
     console.log(`  ${email}: ${status}`);
   }
 
-  const allValid = ACCOUNT_LIST.every(e => validationResults[e]?.valid);
+  const allTokensValid = ACCOUNT_LIST.every(e => validationResults[e]?.valid);
+  const allValid = allTokensValid && !verifyFailed;
   console.log(`\n  Overall: ${allValid ? '✅ All accounts ready' : '⚠️ Some accounts need attention'}`);
 
   if (!allValid) {

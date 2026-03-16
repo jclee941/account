@@ -26,33 +26,16 @@ import { join } from 'node:path';
 
 import { createCallbackServer } from '../lib/oauth-callback-server.mjs';
 import { exchangeAuthCode } from '../lib/token-exchange.mjs';
-
-// ── Antigravity OAuth constants ──────────────────────────────────────────────
-const CLIENT_ID = '<REDACTED>';
-const CLIENT_SECRET = '<REDACTED>';
-const SCOPES = [
-  'https://www.googleapis.com/auth/cloud-platform',
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile',
-  'https://www.googleapis.com/auth/cclog',
-  'https://www.googleapis.com/auth/experimentsandconfigs',
-];
-
+import { CLIENT_ID, CLIENT_SECRET, SCOPES, getArg, validateRefreshToken } from '../lib/antigravity-shared.mjs';
 const ACCOUNTS_FILE = join(process.env.HOME || '/home/jclee', '.config/opencode/antigravity-accounts.json');
 const RESULTS_FILE = join(import.meta.dirname, 'manual-token-results.json');
 
 // ── CLI parsing ──────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
-
-function getArg(name, fallback) {
-  const idx = args.indexOf(`--${name}`);
-  return idx !== -1 && args[idx + 1] ? args[idx + 1] : fallback;
-}
-
-const SINGLE_EMAIL = getArg('email', '');
-const BATCH = getArg('batch', '');
-const PORT = Number(getArg('port', '51121'));
-const TIMEOUT_SEC = Number(getArg('timeout', '300'));
+const SINGLE_EMAIL = getArg(args, 'email', '');
+const BATCH = getArg(args, 'batch', '');
+const PORT = Number(getArg(args, 'port', '51121'));
+const TIMEOUT_SEC = Number(getArg(args, 'timeout', '300'));
 const UPDATE_ACCOUNTS = args.includes('--update-accounts');
 
 const EMAILS = (SINGLE_EMAIL || BATCH).split(',').map((v) => v.trim()).filter(Boolean);
@@ -76,31 +59,6 @@ if (EMAILS.length === 0) {
   console.error('Missing --email or --batch with at least one email address');
   process.exit(1);
 }
-
-// ── Token validation ─────────────────────────────────────────────────────────
-async function validateRefreshToken(refreshToken) {
-  if (!refreshToken) return { valid: false, error: 'no token' };
-  try {
-    const response = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }),
-    });
-    const json = await response.json();
-    if (json.access_token) {
-      return { valid: true, accessToken: json.access_token, expiresIn: json.expires_in };
-    }
-    return { valid: false, error: `${json.error}: ${json.error_description || ''}` };
-  } catch (err) {
-    return { valid: false, error: err.message };
-  }
-}
-
 // ── Per-account flow ─────────────────────────────────────────────────────────
 async function acquireTokenForAccount(email) {
   const state = crypto.randomUUID();
