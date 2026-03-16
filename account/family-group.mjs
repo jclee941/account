@@ -20,9 +20,9 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
 // ── Config ──────────────────────────────────────────────────────────
-const CSV_FILE = join(import.meta.dirname, "accounts.csv");
-const RESULTS_FILE = join(import.meta.dirname, "family-results.csv");
-const SCREENSHOT_DIR = join(import.meta.dirname, "screenshots");
+const CSV_FILE = join(import.meta.dirname, "..", "accounts.csv");
+const RESULTS_FILE = join(import.meta.dirname, "..", "family-results.csv");
+const SCREENSHOT_DIR = join(import.meta.dirname, "..", "screenshots");
 const PREFIX = "qws943";
 const FAMILIES_URL = "https://families.google.com";
 const INVITE_URL = "https://families.google.com/families/invite";
@@ -50,7 +50,7 @@ async function delay(ms) {
 // ── Load accounts from CSV ──────────────────────────────────────────
 function loadAccounts() {
   if (!existsSync(CSV_FILE)) {
-    console.error(`❌ accounts.csv not found. Run create-accounts.mjs first.`);
+    console.error(`❌ accounts.csv not found. Run account/create-accounts.mjs first.`);
     process.exit(1);
   }
 
@@ -345,7 +345,7 @@ async function main() {
 
   if (filtered.length === 0) {
     console.log("❌ No matching accounts found in accounts.csv");
-    console.log("   Run create-accounts.mjs first to create the accounts.");
+    console.log("   Run account/create-accounts.mjs first to create the accounts.");
     return;
   }
 

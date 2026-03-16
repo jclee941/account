@@ -29,9 +29,10 @@ import { fileURLToPath } from "node:url";
 
 // ── Constants ───────────────────────────────────────────────────────
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const ROOT_DIR = path.resolve(SCRIPT_DIR, "..");
 const DATA_DIR =
-  process.env.DATA_DIR || path.join(SCRIPT_DIR, ".gmail-creator-data");
-const ACCOUNTS_CSV = path.join(SCRIPT_DIR, "accounts.csv");
+  process.env.DATA_DIR || path.join(ROOT_DIR, ".gmail-creator-data");
+const ACCOUNTS_CSV = path.join(ROOT_DIR, "accounts.csv");
 const CREATE_SCRIPT = path.join(SCRIPT_DIR, "create-accounts.mjs");
 
 const ISO_TS_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;

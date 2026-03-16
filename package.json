@@ -14,6 +14,8 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@playwright/mcp": "^0.0.68",
     "ghost-cursor-playwright": "^2.1.0",
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0",
     "rebrowser-playwright": "^1.52.0",
     "ws": "^8.19.0"
   }

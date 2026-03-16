@@ -42,8 +42,8 @@ const BIRTH_MONTH = "1"; // January
 const BIRTH_DAY = "15";
 const GENDER = "male"; // male | female
 
-const CSV_FILE = join(import.meta.dirname, "accounts.csv");
-const SCREENSHOT_DIR = join(import.meta.dirname, "screenshots");
+const CSV_FILE = join(import.meta.dirname, "..", "accounts.csv");
+const SCREENSHOT_DIR = join(import.meta.dirname, "..", "screenshots");
 const CANNOT_CREATE_ERROR = "GOOGLE_CANNOT_CREATE";
 const DEFAULT_5SIM_REGION = "russia";
 
@@ -167,6 +167,7 @@ const FIVESIM_API_KEY = getArg("api-key", process.env.FIVESIM_API_KEY || "").tri
 const SMS_PROVIDER = getArg("sms-provider", process.env.SMS_PROVIDER || "5sim").trim().toLowerCase();
 const SMS_API_KEY = getArg("sms-key", "").trim() || FIVESIM_API_KEY; // --sms-key takes priority, falls back to --api-key / FIVESIM_API_KEY
 const FIVESIM_REGION = getArg("region", process.env.FIVESIM_REGION || DEFAULT_5SIM_REGION).trim();
+const SMS_REGION = getArg("sms-region", "").trim() || FIVESIM_REGION; // --sms-region overrides region for SMS number purchase only
 const PROXY_SERVER = getArg("proxy", process.env.PROXY_SERVER || "").trim();
 const PROXY_USER = getArg("proxy-user", process.env.PROXY_USER || "").trim();
 const PROXY_PASS = getArg("proxy-pass", process.env.PROXY_PASS || "").trim();
@@ -617,7 +618,10 @@ async function fiveSimGetJson(url, apiKey) {
   }
 
   if (!response.ok) {
-    const message = body?.message || rawText || `5sim request failed (${response.status})`;
+    let message = body?.message || rawText || `5sim request failed (${response.status})`;
+    if (response.status === 401) {
+      message = "Unauthorized API key. 5sim v1/user endpoints require Authorization: Bearer <API_KEY>. Verify --api-key/FIVESIM_API_KEY from your 5sim account.";
+    }
     throw new Error(`5sim HTTP ${response.status}: ${String(message).slice(0, 200)}`);
   }
   return body;
@@ -629,14 +633,18 @@ async function getBestOperator(apiKey, region) {
     apiKey
   );
 
-  const operatorMap = body?.[region]?.google;
+  // 5sim API returns { google: { country: { operator: {...} } } }
+  // Try new format first, then legacy format
+  const operatorMap = body?.google?.[region] || body?.[region]?.google;
   if (!operatorMap || typeof operatorMap !== "object") {
     throw new Error(`No operators available for region: ${region}`);
   }
 
-  const sorted = Object.entries(operatorMap).sort(([, a], [, b]) => {
-    return Number(b?.rate || 0) - Number(a?.rate || 0);
-  });
+  const sorted = Object.entries(operatorMap)
+    .filter(([, info]) => (info?.count || 0) > 0)
+    .sort(([, a], [, b]) => {
+      return Number(b?.rate || 0) - Number(a?.rate || 0);
+    });
 
   if (sorted.length === 0) {
     throw new Error(`No operator data found for region: ${region}`);
@@ -2542,16 +2550,21 @@ async function main() {
   console.log(`  Mode:     ${DRY_RUN ? "DRY RUN" : HEADED ? "HEADED" : "HEADLESS (xvfb)"}`);
   console.log("  Stealth:  rebrowser-playwright + ghost-cursor");
   console.log("  Delays:   60-120s between accounts");
-  console.log(`  SMS:      provider=${SMS_PROVIDER} region=${FIVESIM_REGION} apiKey=${SMS_API_KEY ? "set" : "unset"}`);
+  console.log(`  SMS:      provider=${SMS_PROVIDER} region=${SMS_REGION}${SMS_REGION !== FIVESIM_REGION ? ` (browser: ${FIVESIM_REGION})` : ''} apiKey=${SMS_API_KEY ? "set" : "unset"}`);
   console.log("═══════════════════════════════════════════════════════\n");
 
-  const smsProvider = !DRY_RUN ? createSmsProvider(SMS_PROVIDER, SMS_API_KEY, FIVESIM_REGION) : null;
+  const smsProvider = !DRY_RUN ? createSmsProvider(SMS_PROVIDER, SMS_API_KEY, SMS_REGION) : null;
 
   if (!DRY_RUN && smsProvider) {
     try {
       const startBalance = await smsProvider.getBalance();
       console.log(`💰 ${smsProvider.name} balance (start): ${startBalance.toFixed(4)}`);
     } catch (err) {
+      if (String(err?.message || "").includes("5sim HTTP 401")) {
+        throw new Error(
+          "5sim authentication failed (401). Confirm API key value and pass it as --api-key or FIVESIM_API_KEY."
+        );
+      }
       console.log(`⚠️ Unable to fetch ${smsProvider.name} start balance: ${err.message.slice(0, 120)}`);
     }
   }

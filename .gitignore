@@ -27,3 +27,9 @@ Thumbs.db
 # OpenCode
 .opencode/
 .sisyphus/
+
+# Temporary artifacts
+*.png
+*.log
+ag-tokens-*.json
+manual-token-results.json
