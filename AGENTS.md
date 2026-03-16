@@ -19,7 +19,7 @@ Gmail automation workspace. Node.js ESM using Playwright/Rebrowser + 5sim for ac
 │   └── verify-age.mjs             # age verification via 5sim SMS (814L)
 ├── antigravity/                   # Antigravity IDE auth & verification
 │   ├── antigravity-auth.mjs       # Antigravity OAuth + SMS verification pipeline (710L)
-│   ├── antigravity-pipeline.mjs   # End-to-end account activation orchestrator (448L)
+│   ├── antigravity-pipeline.mjs   # End-to-end account activation orchestrator (727L)
 │   ├── inject-vscdb-token.mjs     # VSCDB protobuf token injection (467L)
 │   ├── manual-token-acquire.mjs   # Manual-assisted OAuth token acquisition (286L)
 │   └── unlock-features.mjs        # 5sim SMS feature unlock for Antigravity (757L)
@@ -54,7 +54,7 @@ Gmail automation workspace. Node.js ESM using Playwright/Rebrowser + 5sim for ac
 | Create GCP OAuth credentials | `oauth/setup-gcp-oauth.mjs` | Manual login fallback in headed mode |
 | Antigravity OAuth + SMS | `antigravity/antigravity-auth.mjs` | Combined OAuth token acquisition + SMS verification |
 | Antigravity feature unlock | `antigravity/unlock-features.mjs` | 5sim SMS verification for Antigravity accounts |
-| Antigravity end-to-end pipeline | `antigravity/antigravity-pipeline.mjs` | Token validate → acquire → VSCDB inject → launch → verify |
+| Antigravity end-to-end pipeline | `antigravity/antigravity-pipeline.mjs` | CSV import → validate → auto/manual acquire → inject → launch → verify → unlock |
 | VSCDB token injection | `antigravity/inject-vscdb-token.mjs` | Protobuf encode + SQLite write to state.vscdb |
 | Manual token acquisition | `antigravity/manual-token-acquire.mjs` | OAuth URL + callback server for VNC manual login |
 | OAuth callback server | `lib/oauth-callback-server.mjs` | localhost:51121 callback for manual OAuth |
@@ -76,8 +76,12 @@ Gmail automation workspace. Node.js ESM using Playwright/Rebrowser + 5sim for ac
 | `acceptInvitation` | function | `account/family-group.mjs` | child-side acceptance interaction |
 | `main` | function | `oauth/oauth-login.mjs` | OAuth consent/login automation entry |
 | `main` | function | `oauth/setup-gcp-oauth.mjs` | cloud console OAuth credential flow |
-| `main` | function | `antigravity/antigravity-pipeline.mjs` | end-to-end pipeline: validate → acquire → inject → launch |
+| `main` | function | `antigravity/antigravity-pipeline.mjs` | end-to-end pipeline: CSV import → validate → acquire → inject → launch → verify → unlock |
 | `validateRefreshToken` | function | `antigravity/antigravity-pipeline.mjs` | tests refresh token against Google OAuth2 endpoint |
+| `acquireTokensAuto` | function | `antigravity/antigravity-pipeline.mjs` | automated token acquisition via `antigravity-auth.mjs` (5sim SMS) |
+| `acquireTokensManual` | function | `antigravity/antigravity-pipeline.mjs` | manual-assisted token acquisition via `manual-token-acquire.mjs` |
+| `parseAccountsCsv` | function | `antigravity/antigravity-pipeline.mjs` | multiline-tolerant CSV parser for `accounts.csv` import |
+| `importAccountsFromCsv` | function | `antigravity/antigravity-pipeline.mjs` | imports success-status accounts from CSV into `antigravity-accounts.json` |
 | `encodeOAuthTokenInfo` | function | `antigravity/inject-vscdb-token.mjs` | manual protobuf encoding of OAuthTokenInfo message |
 | `encodeUnifiedStateSyncMap` | function | `antigravity/inject-vscdb-token.mjs` | wraps protobuf in USS map format (key + value wrapper) |
 | `runForEmail` | function | `antigravity/manual-token-acquire.mjs` | per-account OAuth URL generation + callback capture |
@@ -133,6 +137,10 @@ node oauth/setup-gcp-oauth.mjs --headed
 node antigravity/antigravity-auth.mjs --batch qws94301@gmail.com --api-key $FIVESIM_API_KEY
 node antigravity/unlock-features.mjs qws94301@gmail.com --api-key $FIVESIM_API_KEY
 
+# Antigravity end-to-end pipeline
+node antigravity/antigravity-pipeline.mjs --dry-run --accounts qws94201@gmail.com
+node antigravity/antigravity-pipeline.mjs --from-csv --accounts qws94201@gmail.com --region indonesia
+node antigravity/antigravity-pipeline.mjs --from-csv --skip-unlock --skip-launch --skip-verify
 ```
 
 ## ENVIRONMENT VARIABLES
