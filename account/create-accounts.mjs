@@ -1144,6 +1144,15 @@ async function handlePhoneVerification(page, cursor, smsProvider) {
       }
 
       await delay(randomInt(4000, 6000));
+      // Check for wrong SMS code before assuming success
+      const bodyAfterVerify = (await getBodyText(page)).toLowerCase();
+      const wrongCodePatterns = ["wrong code", "잘못된 코드", "that code didn't work", "코드가 올바르지", "неправильный код", "kode salah"];
+      if (wrongCodePatterns.some(p => bodyAfterVerify.includes(p))) {
+        console.log("    ⚠️ Wrong SMS code. Cancelling number and retrying...");
+        await smsProvider.cancelNumber(activePhoneId).catch(() => {});
+        activePhoneId = null;
+        continue;
+      }
       await assertNotCannotCreate(page);
       await smsProvider.finishNumber(activePhoneId).catch(() => {});
       activePhoneId = null;
@@ -2619,7 +2628,9 @@ async function main() {
 
     const result = await createAccountWithRetries(username, name, smsProvider);
     totalSmsCost += Number(result.cost || 0);
-    appendCsv(result);
+    if (result.status === "success") {
+      appendCsv(result);
+    }
 
     if (result.status === "success") {
       successCount++;
