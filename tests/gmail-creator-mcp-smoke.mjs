@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SERVER_PATH = path.join(__dirname, "..", "gmail-creator-mcp.mjs");
+const SERVER_PATH = path.join(__dirname, "..", "account", "gmail-creator-mcp.mjs");
 
 let passed = 0;
 let failed = 0;

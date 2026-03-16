@@ -3,7 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const transport = new StdioClientTransport({
   command: "node",
-  args: ["/home/jclee/dev/gmail/gmail-creator-mcp.mjs"],
+  args: ["/home/jclee/dev/gmail/account/gmail-creator-mcp.mjs"],
 });
 const client = new Client({ name: "qa", version: "1.0.0" });
 await client.connect(transport);
