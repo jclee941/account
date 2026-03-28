@@ -34,6 +34,8 @@ import { writeFileSync, existsSync, readFileSync, mkdirSync } from "fs";
 import { spawn } from "child_process";
 import { join } from "path";
 import { FreeProxyPool } from '../lib/free-proxy.mjs';
+import { AccountVerificationPipeline } from '../lib/verification-pipeline.mjs';
+import { createBehaviorProfile } from '../lib/behavior-profile.mjs';
 
 // ── Config ──────────────────────────────────────────────────────────
 const PASSWORD = "bingogo1";
@@ -251,9 +253,27 @@ function launchRealChrome(cdpPort, proxyUrl) {
 
 
 
+function escapeCsv(value) {
+  if (value == null) return '';
+  const str = String(value);
+  // Escape values containing commas, quotes, or newlines
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
 function appendCsv(row) {
-  const line = `${row.username},${row.email},${row.password},${row.firstName},${row.lastName},${row.koreanName},${formatCost(row.cost)},${row.status},${row.timestamp}\n`;
+  const verificationConfidence = row.verification ? (row.verification.confidence * 100).toFixed(1) : '';
+  const verificationSignals = row.verification ? row.verification.signals.map(s => s.name).join(';') : '';
+  const line = `${escapeCsv(row.username)},${escapeCsv(row.email)},${escapeCsv(row.password)},${escapeCsv(row.firstName)},${escapeCsv(row.lastName)},${escapeCsv(row.koreanName)},${escapeCsv(formatCost(row.cost))},${escapeCsv(row.status)},${escapeCsv(row.timestamp)},${escapeCsv(verificationConfidence)},${escapeCsv(verificationSignals)}
+`;
   writeFileSync(CSV_FILE, line, { flag: "a" });
+}
+function initCsv() {
+  if (!existsSync(CSV_FILE)) {
+    writeFileSync(CSV_FILE, "username,email,password,firstName,lastName,koreanName,cost,status,timestamp,verificationConfidence,verificationSignals\n");
+  }
 }
 
 function initCompleteCsv() {
@@ -261,25 +281,41 @@ function initCompleteCsv() {
     writeFileSync(COMPLETE_CSV_FILE, 'email,password,username,firstName,lastName,proxy,region,smsRegion,createdAt\n');
   }
 }
-
 function appendCompleteCsv(row) {
-  const line = `${row.email},${row.password},${row.username},${row.firstName},${row.lastName},${row.proxy || ''},${row.region || ''},${row.smsRegion || ''},${row.timestamp}\n`;
+  const line = `${escapeCsv(row.email)},${escapeCsv(row.password)},${escapeCsv(row.username)},${escapeCsv(row.firstName)},${escapeCsv(row.lastName)},${escapeCsv(row.proxy || '')},${escapeCsv(row.region || '')},${escapeCsv(row.smsRegion || '')},${escapeCsv(row.timestamp)}\n`;
   writeFileSync(COMPLETE_CSV_FILE, line, { flag: 'a' });
 }
-
-function initCsv() {
-  if (!existsSync(CSV_FILE)) {
-    writeFileSync(CSV_FILE, "username,email,password,firstName,lastName,koreanName,cost,status,timestamp\n");
-  }
-}
-
 function getCompletedUsernames() {
   if (!existsSync(CSV_FILE)) return new Set();
-  const lines = readFileSync(CSV_FILE, "utf-8").trim().split("\n").slice(1);
+  const content = readFileSync(CSV_FILE, "utf-8").trim();
+  const lines = content.split("\n").slice(1);
   return new Set(
     lines
       .filter((l) => l.includes(",success,"))
-      .map((l) => l.split(",")[0])
+      .map((l) => {
+        // Simple CSV parser: handle quoted fields
+        const cols = [];
+        let col = '';
+        let inQuotes = false;
+        for (let i = 0; i < l.length; i++) {
+          const c = l[i];
+          if (c === '"') {
+            if (inQuotes && l[i + 1] === '"') {
+              col += '"';
+              i++; // skip next quote
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (c === ',' && !inQuotes) {
+            cols.push(col);
+            col = '';
+          } else {
+            col += c;
+          }
+        }
+        cols.push(col);
+        return cols[0]; // username is first column
+      })
       .filter(Boolean)
   );
 }
@@ -726,7 +762,7 @@ async function clickPostVerificationButton(page, cursor) {
  * Re-fills birthday/gender form when Google loops back after password submit.
  * Uses module-level constants: BIRTH_MONTH, BIRTH_DAY, BIRTH_YEAR, GENDER.
  */
-async function fillBirthdayGender(page, cursor) {
+async function fillBirthdayGender(page, cursor, username) {
   console.log('  → Re-filling birthday & gender (form loop-back)...');
   await delay(randomInt(1000, 2000));
 
@@ -745,13 +781,13 @@ async function fillBirthdayGender(page, cursor) {
 
   const dayInput = page.getByRole('textbox', { name: /Day|일|День|день|Tag|Hari/i });
   if (await dayInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await humanType(page, dayInput, BIRTH_DAY);
+    await humanType(page, dayInput, BIRTH_DAY, username);
     await delay(randomInt(300, 600));
   }
 
   const yearInput = page.getByRole('textbox', { name: /Year|연|Год|год|Jahr|Tahun/i });
   if (await yearInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await humanType(page, yearInput, BIRTH_YEAR);
+    await humanType(page, yearInput, BIRTH_YEAR, username);
     await delay(randomInt(300, 600));
   }
 
@@ -1065,22 +1101,27 @@ const STEALTH_ARGS = [
 ];
 
 // ── Human-Like Typing ───────────────────────────────────────────────
-async function humanType(page, locator, text) {
-  await locator.click();
-  await delay(randomInt(200, 500));
+// Per-account behavior profile cache
+const behaviorProfileCache = new Map();
 
-  for (let i = 0; i < text.length; i++) {
-    await page.keyboard.type(text[i], { delay: randomInt(150, 450) });
-
-    if (i > 0 && i % randomInt(3, 5) === 0) {
-      await delay(randomInt(400, 800));
+async function humanType(page, locator, text, accountId = null) {
+  // Get or create behavior profile for this account
+  let profile;
+  if (accountId && behaviorProfileCache.has(accountId)) {
+    profile = behaviorProfileCache.get(accountId);
+  } else {
+    profile = createBehaviorProfile();
+    if (accountId) {
+      behaviorProfileCache.set(accountId, profile);
+      console.log(`  [BehaviorProfile] Created for ${accountId}: ${JSON.stringify(profile.getProfileSummary())}`);
     }
   }
-  await delay(randomInt(500, 1000));
+  // Use the profile to type
+  await profile.typeWithProfile(page, locator, text);
 }
 
 // ── Profile Warming ─────────────────────────────────────────────────
-async function warmProfile(page, cursor) {
+async function warmProfile(page, cursor, username) {
   try {
     // Skip warming when proxy is active - residential proxy too slow for Chrome full page loads
     if (PROXY_SERVER) {
@@ -1118,7 +1159,7 @@ async function warmProfile(page, cursor) {
         const searchTerm = randomPick(WARMING_SEARCH_TERMS);
         const searchInput = page.locator('textarea[name="q"], input[name="q"]').first();
         if (await searchInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-          await humanType(page, searchInput, searchTerm);
+          await humanType(page, searchInput, searchTerm, username);
           await page.keyboard.press("Enter");
           await delay(randomInt(3000, 6000));
 
@@ -1191,7 +1232,7 @@ async function warmProfile(page, cursor) {
       const mapInput = page.locator('input#searchboxinput, input[name="q"]').first();
       if (await mapInput.isVisible({ timeout: 5000 }).catch(() => false)) {
         const mapTerm = mapSearchTerms[Math.floor(Math.random() * mapSearchTerms.length)];
-        await humanType(page, mapInput, mapTerm);
+        await humanType(page, mapInput, mapTerm, username);
         await page.keyboard.press("Enter");
         await delay(randomInt(3000, 6000));
         // Scroll through results
@@ -1360,7 +1401,7 @@ async function handlePhoneVerification(page, cursor, smsProvider, username) {
       const smsCountryCode = REGION_COUNTRY_CODE[SMS_REGION] || '';
       const fullPhoneNumber = smsCountryCode ? `${smsCountryCode}${order.phone}` : order.phone;
       console.log(`    📞 Typing phone: ${fullPhoneNumber} (local: ${order.phone}, country: ${SMS_REGION}, code: ${smsCountryCode})`);
-      await humanType(page, readyPhoneInput, fullPhoneNumber);
+      await humanType(page, readyPhoneInput, fullPhoneNumber, username);
 
       const clickedNext = await clickNextLike(page, cursor);
       if (!clickedNext) {
@@ -1427,7 +1468,7 @@ async function handlePhoneVerification(page, cursor, smsProvider, username) {
       console.log(`    🔐 Received code: ${code}`);
       await codeInput.fill("");
       await delay(randomInt(200, 500));
-      await humanType(page, codeInput, code);
+      await humanType(page, codeInput, code, username);
 
       const clickedVerify = await clickByTexts(page, cursor, ["다음", "Next", "Verify", "확인", "확인하기", "Далее", "Подтвердить", "Berikutnya", "Verifikasi", "Konfirmasi", "Weiter", "Bestätigen"]);
       if (!clickedVerify) {
@@ -1754,7 +1795,6 @@ async function waitForInterstitialOrPhone(page, cursor, username) {
       console.log('');
       console.log('  ❌ Phone input did not appear after waiting. QR scan may have failed.');
       throw new Error('blocked:qr_code_verification');
-      throw new Error('blocked:qr_code_verification');
     }
 
     // devicephoneverification/initiate is a PHONE NUMBER input page — NOT a blocker!
@@ -1785,7 +1825,7 @@ async function waitForInterstitialOrPhone(page, cursor, username) {
       const stuckTime = Date.now() - startTime;
       if (stuckTime > 15000) {
         console.log(`  \u26a0\ufe0f Page looped back to birthday/gender after ${Math.round(stuckTime/1000)}s \u2014 re-filling form...`);
-        await fillBirthdayGender(page, cursor);
+        await fillBirthdayGender(page, cursor, username);
         await delay(randomInt(2000, 3000));
         continue;
       }
@@ -1801,14 +1841,14 @@ async function waitForInterstitialOrPhone(page, cursor, username) {
           console.log('  → Page navigated away from password before we could interact. Continuing loop...');
           continue;
         }
-        const pwdInput = page.locator('input[name="Passwd"], input[type="password"]').first();
+        const pwdInput = page.locator('input[autocomplete="new-password"], input[id="password"], input[name="Passwd"], input[type="password"]').first();
         const confirmPwd = page.locator('input[name="PasswdAgain"], input[name="ConfirmPasswd"], input[type="password"]').nth(1);
         if (await pwdInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-          await humanType(page, pwdInput, PASSWORD);
+          await humanType(page, pwdInput, PASSWORD, username);
           await delay(randomInt(500, 1200));
         }
         if (await confirmPwd.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await humanType(page, confirmPwd, PASSWORD);
+          await humanType(page, confirmPwd, PASSWORD, username);
           await delay(randomInt(500, 1000));
         }
         await clickNextLike(page, cursor);
@@ -2102,7 +2142,7 @@ async function waitForInterstitialOrPhone(page, cursor, username) {
 
       // Strategy 2: If no suggestions, check if input already has our username — skip re-typing to reduce automation signals
       if (!suggestionClicked) {
-        const usernameInput = page.locator('input[name="Username"], input[type="text"][aria-label*="mail"], input[name="username"]').first();
+        const usernameInput = page.locator('input[id="username"], input[name="Username"], input[type="text"][aria-label*="mail"], input[name="username"]').first();
         if (await usernameInput.isVisible({ timeout: 3000 }).catch(() => false)) {
           const currentValue = await usernameInput.inputValue().catch(() => '');
           if (currentValue === username) {
@@ -2112,7 +2152,7 @@ async function waitForInterstitialOrPhone(page, cursor, username) {
             username = currentValue;  // Accept whatever Google pre-filled
           } else {
             console.log(`  → Username field is empty. Typing: ${username}`);
-            await humanType(page, usernameInput, username);
+            await humanType(page, usernameInput, username, username);
             await delay(randomInt(500, 1000));
           }
         }
@@ -2137,12 +2177,12 @@ async function waitForInterstitialOrPhone(page, cursor, username) {
           const suffix2 = randomInt(100000, 999999);
           const retryUsername = `${names2.firstName.toLowerCase()}${names2.lastName.toLowerCase()}${suffix2}`;
           console.log(`  → Username taken (retry ${retryCount + 1}/3). Trying: ${retryUsername}`);
-          const usernameInput2 = page.locator('input[name="Username"], input[type="text"][aria-label*="mail"], input[name="username"]').first();
+          const usernameInput2 = page.locator('input[id="username"], input[name="Username"], input[type="text"][aria-label*="mail"], input[name="username"]').first();
           await usernameInput2.click({ clickCount: 3 });
           await delay(200);
           await usernameInput2.press('Backspace');
           await delay(200);
-          await humanType(page, usernameInput2, retryUsername);
+          await humanType(page, usernameInput2, retryUsername, username);
           username = retryUsername;
           await delay(randomInt(500, 1000));
           if (cursor) { await cursorClick(cursor, page, nextBtnUser); } else { await nextBtnUser.click(); }
@@ -2157,14 +2197,14 @@ async function waitForInterstitialOrPhone(page, cursor, username) {
       const needsPassword = postUsernameText.includes('Create a strong password') || postUsernameText.includes('Создайте надежный пароль') || postUsernameText.includes('비밀번호 만들기') || postUsernameText.includes('Buat sandi') || postUsernameText.includes('Sicheres Passwort erstellen') || postUsernameText.includes('Passwort erstellen') || postUsernameText.includes('createpassword') || page.url().includes('createpassword');
       if (needsPassword) {
         console.log('  → Password re-entry required after username change.');
-        const pwdInput = page.locator('input[name="Passwd"], input[type="password"]').first();
+        const pwdInput = page.locator('input[autocomplete="new-password"], input[id="password"], input[name="Passwd"], input[type="password"]').first();
         const confirmPwd = page.locator('input[name="PasswdAgain"], input[name="ConfirmPasswd"], input[type="password"]').nth(1);
         if (await pwdInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-          await humanType(page, pwdInput, PASSWORD);
+          await humanType(page, pwdInput, PASSWORD, username);
           await delay(randomInt(500, 1200));
         }
         if (await confirmPwd.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await humanType(page, confirmPwd, PASSWORD);
+          await humanType(page, confirmPwd, PASSWORD, username);
           await delay(randomInt(500, 1000));
         }
         const nextBtnPwd = page.locator('button:has-text("다음"), button:has-text("Next"), button:has-text("Далее"), button:has-text("Berikutnya"), button:has-text("Weiter")').first();
@@ -2771,7 +2811,7 @@ async function createAccount(username, name, smsProvider) {
 
   try {
     console.log("  → Profile warming...");
-    await warmProfile(page, cursor);
+    await warmProfile(page, cursor, username);
 
     console.log("  → Navigating to signup page...");
     await gotoSignupWithFallback(page);
@@ -2808,12 +2848,12 @@ async function createAccount(username, name, smsProvider) {
     }
 
     console.log(`  → Filling name: ${name.firstName} ${name.lastName}`);
-    const firstNameInput = page.locator('input[name="firstName"]');
-    const lastNameInput = page.locator('input[name="lastName"]');
+    const firstNameInput = page.locator('input[id="firstName"], input[name="firstName"], input[autocomplete="given-name"]');
+    const lastNameInput = page.locator('input[id="lastName"], input[name="lastName"], input[autocomplete="family-name"]');
 
-    await humanType(page, firstNameInput, name.firstName);
+    await humanType(page, firstNameInput, name.firstName, username);
     await delay(randomInt(500, 1200));
-    await humanType(page, lastNameInput, name.lastName);
+    await humanType(page, lastNameInput, name.lastName, username);
     await delay(randomInt(800, 1500));
 
     const nextBtn1 = page.locator('button:has-text("다음"), button:has-text("Next"), button:has-text("Далее"), button:has-text("Berikutnya"), button:has-text("Weiter")').first();
@@ -2851,13 +2891,13 @@ async function createAccount(username, name, smsProvider) {
 
     const dayInput = page.getByRole("textbox", { name: /Day|일|День|день|Tag|Hari/i });
     if (await dayInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await humanType(page, dayInput, BIRTH_DAY);
+      await humanType(page, dayInput, BIRTH_DAY, username);
       await delay(randomInt(300, 600));
     }
 
     const yearInput = page.getByRole("textbox", { name: /Year|연|Год|год|Jahr|Tahun/i });
     if (await yearInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await humanType(page, yearInput, BIRTH_YEAR);
+      await humanType(page, yearInput, BIRTH_YEAR, username);
       await delay(randomInt(300, 600));
     }
 
@@ -2921,9 +2961,9 @@ async function createAccount(username, name, smsProvider) {
       await delay(randomInt(1000, 2000));
     }
 
-    const usernameInput = page.locator('input[name="Username"], input[type="text"][aria-label*="mail"], input[name="username"]').first();
+    const usernameInput = page.locator('input[id="username"], input[name="Username"], input[type="text"][aria-label*="mail"], input[name="username"]').first();
     if (await usernameInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await humanType(page, usernameInput, username);
+      await humanType(page, usernameInput, username, username);
       await delay(randomInt(500, 1000));
     }
 
@@ -2937,15 +2977,15 @@ async function createAccount(username, name, smsProvider) {
     await assertNotCannotCreate(page);
 
     console.log("  → Setting password...");
-    const passwordInput = page.locator('input[name="Passwd"], input[type="password"]').first();
+    const passwordInput = page.locator('input[autocomplete="new-password"], input[id="password"], input[name="Passwd"], input[type="password"]').first();
     const confirmInput = page.locator('input[name="PasswdAgain"], input[name="ConfirmPasswd"], input[type="password"]').nth(1);
 
     if (await passwordInput.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await humanType(page, passwordInput, PASSWORD);
+      await humanType(page, passwordInput, PASSWORD, username);
       await delay(randomInt(500, 1200));
     }
     if (await confirmInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await humanType(page, confirmInput, PASSWORD);
+      await humanType(page, confirmInput, PASSWORD, username);
       await delay(randomInt(500, 1000));
     }
 
@@ -3354,19 +3394,36 @@ async function createAccount(username, name, smsProvider) {
     await handlePostSmsScreens(page, cursor);
     await assertNotCannotCreate(page);
 
-    const currentUrl = page.url();
-    if (isGoogleSuccessUrl(currentUrl)) {
+    // Stage 1: Immediate verification with confidence scoring
+    console.log("  [VerificationPipeline] Running immediate verification...");
+    const pipeline = new AccountVerificationPipeline({ confidenceThreshold: 0.6 });
+    const verificationResult = await pipeline.verifyImmediate(page);
+    
+    console.log(`  [VerificationPipeline] Confidence: ${(verificationResult.confidence * 100).toFixed(1)}% (threshold: 60%)`);
+    console.log(`  [VerificationPipeline] Signals: ${verificationResult.signals.map(s => s.name).join(', ') || 'none'}`);
+    
+    if (verificationResult.passed) {
       result.status = "success";
-      console.log(`  ✅ Account created: ${email}`);
+      result.verification = verificationResult;
+      console.log(`  ✅ Account created: ${email} (verified with ${(verificationResult.confidence * 100).toFixed(1)}% confidence)`);
     } else {
-      const screenshotPath = join(SCREENSHOT_DIR, `${username}-final.png`);
-      await page.screenshot({ path: screenshotPath, fullPage: true });
+      // Fallback to legacy URL check for backward compatibility
+      const currentUrl = page.url();
+      if (isGoogleSuccessUrl(currentUrl)) {
+        result.status = "success";
+        result.verification = verificationResult;
+        console.log(`  ✅ Account created: ${email} (legacy URL match, confidence was ${(verificationResult.confidence * 100).toFixed(1)}%)`);
+      } else {
+        const screenshotPath = join(SCREENSHOT_DIR, `${username}-final.png`);
+        await page.screenshot({ path: screenshotPath, fullPage: true });
 
-      const pageText = await page.textContent("body").then((t) => t?.slice(0, 300)).catch(() => "");
-      console.log(`  📄 Page text: ${pageText?.replace(/\n/g, " ").slice(0, 200)}`);
+        const pageText = await page.textContent("body").then((t) => t?.slice(0, 300)).catch(() => "");
+        console.log(`  📄 Page text: ${pageText?.replace(/\n/g, " ").slice(0, 200)}`);
 
-      result.status = `manual-check:${currentUrl}`;
-      console.log(`  ⚠️  Needs manual check: ${email} (screenshot saved)`);
+        result.status = `manual-check:${currentUrl}`;
+        result.verification = verificationResult;
+        console.log(`  ⚠️  Needs manual check: ${email} (screenshot saved)`);
+      }
     }
   } catch (err) {
     if (err.message === CANNOT_CREATE_ERROR) {
@@ -3421,6 +3478,16 @@ async function main() {
     throw new Error(`Missing SMS API key for provider '${SMS_PROVIDER}'. Set --api-key, --sms-key, or FIVESIM_API_KEY for non-dry-run execution.`);
   }
 
+  // Run preflight checks
+  console.log("🔍 Running pre-flight checks...\n");
+  const preflightOk = await runPreflightChecks();
+  if (!preflightOk) {
+    console.error('\n❌ Pre-flight checks failed. Please fix the issues above and try again.\n');
+    process.exit(1);
+  }
+  console.log('✅ Pre-flight checks passed\n');
+
+  console.log("═══════════════════════════════════════════════════════");
   console.log("═══════════════════════════════════════════════════════");
   console.log(`  Google Account Creator — ${PREFIX}xx (Stealth Edition)`);
   console.log("═══════════════════════════════════════════════════════");
@@ -3432,10 +3499,11 @@ async function main() {
   console.log("  Delays:   60-120s between accounts");
   console.log(`  SMS:      provider=${SMS_PROVIDER} region=${SMS_REGION}${SMS_REGION !== FIVESIM_REGION ? ` (browser: ${FIVESIM_REGION})` : ''} apiKey=${SMS_API_KEY ? "set" : "unset"}`);
   console.log("═══════════════════════════════════════════════════════\n");
-
+  
   const smsProvider = !DRY_RUN ? createSmsProvider(SMS_PROVIDER, SMS_API_KEY, SMS_REGION) : null;
-
+  
   let proxyPool = null;
+  console.log("═══════════════════════════════════════════════════════\n");
   if (FREE_PROXY) {
     proxyPool = new FreeProxyPool();
     console.log('🌐 Free proxy mode enabled. Fetching proxy list...');
@@ -3544,8 +3612,11 @@ async function main() {
 
     const result = await createAccountWithRetries(username, name, smsProvider);
     totalSmsCost += Number(result.cost || 0);
+    
+    // Append to CSV for all cases (success, manual-check, error) to preserve verification data
+    appendCsv(result);
+    
     if (result.status === "success") {
-      appendCsv(result);
       appendCompleteCsv({ ...result, proxy: FREE_PROXY ? PROXY_SERVER : (args.find((a, i) => args[i-1] === '--proxy') || ''), region: FIVESIM_REGION, smsRegion: SMS_REGION });
     }
 
@@ -3603,3 +3674,54 @@ main().catch((err) => {
   console.error("Fatal error:", err);
   process.exit(1);
 });
+
+// ── Preflight Checks ─────────────────────────────────────────────────
+async function runPreflightChecks() {
+  const checks = [];
+  
+  // Check Chrome availability for CDP mode
+  if (CDP_MODE) {
+    try {
+      await new Promise((resolve, reject) => {
+        const proc = spawn('which', ['google-chrome-stable']);
+        proc.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error('google-chrome-stable not found'));
+        });
+        proc.on('error', reject);
+      });
+      checks.push({ name: 'Chrome binary', status: 'PASS' });
+    } catch {
+      checks.push({ name: 'Chrome binary', status: 'FAIL', error: 'google-chrome-stable not found in PATH' });
+    }
+  }
+  
+  // Check SMS API key if not dry run
+  if (!DRY_RUN && !FIVESIM_API_KEY) {
+    checks.push({ name: 'SMS API key', status: 'WARN', error: 'No API key provided (use --api-key or FIVESIM_API_KEY env var)' });
+  }
+  
+  const failed = checks.filter(c => c.status === 'FAIL');
+  const warnings = checks.filter(c => c.status === 'WARN');
+  
+  if (failed.length > 0) {
+    console.error('\n❌ Pre-flight checks failed:\n');
+    failed.forEach(c => console.error(`  - ${c.name}: ${c.error}`));
+    console.error('\n📚 Fix instructions:');
+    console.error('  - Install Chrome: sudo apt-get install google-chrome-stable');
+    console.error('  - Or use non-CDP mode: remove --cdp flag');
+    return false;
+  }
+  
+  if (warnings.length > 0) {
+    console.warn('\n⚠️  Pre-flight warnings:\n');
+    warnings.forEach(c => console.warn(`  - ${c.name}: ${c.error}`));
+  }
+  
+  return true;
+
+main().catch(err => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
+}

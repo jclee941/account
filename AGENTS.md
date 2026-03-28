@@ -13,6 +13,13 @@ Gmail automation workspace. Node.js ESM using Playwright/Rebrowser + 5sim for ac
 ```text
 ./
 ├── account/                       # Gmail account automation
+│   ├── create-accounts.mjs        # primary account creation flow (3,727L)
+│   ├── create-accounts-adb.mjs    # ADB + Android Chrome automation (871L)
+│   ├── create-accounts-cdp.mjs    # CDP mode using WebView on ReDroid (965L)
+│   ├── create-accounts-appium.mjs # Appium + Docker Android emulator (1,576L)
+│   ├── family-group.mjs           # invite/accept family flow (496L)
+│   ├── gmail-creator-mcp.mjs      # MCP server: 4 tools for account automation (681L)
+│   └── verify-age.mjs             # age verification via 5sim SMS (814L)
 │   ├── create-accounts.mjs        # primary account creation flow (2,650L)
 │   ├── family-group.mjs           # invite/accept family flow (496L)
 │   ├── gmail-creator-mcp.mjs      # MCP server: 4 tools for account automation (681L)
@@ -31,8 +38,12 @@ Gmail automation workspace. Node.js ESM using Playwright/Rebrowser + 5sim for ac
 │   ├── token-exchange.mjs         # OAuth code→token exchange (29L)
 │   ├── google-auth-browser.mjs    # Google auth browser automation (129L)
 │   ├── browser-launch.mjs         # browser launch helpers (842B)
-│   └── cli-args.mjs               # CLI argument parser (949B)
-├── bin/
+│   ├── cli-args.mjs               # CLI argument parser (949B)
+│   ├── adb-utils.mjs              # ADB command wrappers for Android automation (246L)
+│   ├── sms-provider.mjs           # Modular SMS provider (5sim/sms-activate) (363L)
+│   ├── verification-pipeline.mjs  # 3-stage account verification pipeline
+│   ├── behavior-profile.mjs       # Human-like typing/mouse simulation
+│   └── cdp-utils.mjs              # Chrome DevTools Protocol utilities
 │   └── xdg-open                   # URL interceptor for OAuth callback capture
 ├── tests/                         # MCP server smoke + manual QA tests
 │   ├── gmail-creator-mcp-smoke.mjs  # 29-assertion smoke test suite
@@ -60,6 +71,13 @@ Gmail automation workspace. Node.js ESM using Playwright/Rebrowser + 5sim for ac
 | OAuth callback server | `lib/oauth-callback-server.mjs` | localhost:51121 callback for manual OAuth |
 | URL interceptor | `bin/xdg-open` | Captures OAuth URLs from Antigravity app |
 | Age verification via SMS | `account/verify-age.mjs` | 5sim SMS, Korean-first phone verification, batch CLI |
+| Create Gmail accounts (ADB/Android) | `account/create-accounts-adb.mjs` | ADB + Android Chrome, random account generation |
+| Create Gmail accounts (CDP) | `account/create-accounts-cdp.mjs` | CDP mode via WebView on ReDroid |
+| Create Gmail accounts (Appium) | `account/create-accounts-appium.mjs` | Appium + Docker Android emulator |
+| ADB utilities | `lib/adb-utils.mjs` | ADB command wrappers for Android automation |
+| SMS provider | `lib/sms-provider.mjs` | Modular SMS provider (5sim/sms-activate) |
+| Verification pipeline | `lib/verification-pipeline.mjs` | 3-stage account verification (immediate/delayed/batch) |
+| Behavior profile | `lib/behavior-profile.mjs` | Human-like typing/mouse simulation |
 
 ## CODE MAP
 
@@ -88,6 +106,16 @@ Gmail automation workspace. Node.js ESM using Playwright/Rebrowser + 5sim for ac
 | `main` | function | `account/verify-age.mjs` | batch age verification with 5sim SMS + cost summary |
 | `verifyAge` | function | `account/verify-age.mjs` | per-account login → age page → phone verification flow |
 | `handlePhoneVerification` | function | `account/verify-age.mjs` | 5×3 retry phone verification with cancel/finish lifecycle |
+| `main` | function | `account/create-accounts-adb.mjs` | orchestrates ADB-based account creation |
+| `createAccountWithRetries` | function | `account/create-accounts-adb.mjs` | controls account-level retry/failure policy for ADB flow |
+| `generateAccountSeed` | function | `account/create-accounts-adb.mjs` | generates random US name and username patterns |
+| `handlePhoneVerification` | function | `account/create-accounts-adb.mjs` | 5sim SMS verification with retry logic |
+| `tap` | function | `lib/adb-utils.mjs` | ADB screen tap at coordinates |
+| `screenshot` | function | `lib/adb-utils.mjs` | capture device screenshot via ADB |
+| `launchChrome` | function | `lib/adb-utils.mjs` | launch Chrome browser on Android device |
+| `createSmsProvider` | function | `lib/sms-provider.mjs` | factory for SMS provider instances (5sim/sms-activate) |
+| `buyNumber` | method | `lib/sms-provider.mjs` | purchase phone number for verification |
+| `waitForSms` | method | `lib/sms-provider.mjs` | poll for SMS code with timeout and auto-cancel |
 
 ## CONVENTIONS
 
@@ -117,6 +145,16 @@ Gmail automation workspace. Node.js ESM using Playwright/Rebrowser + 5sim for ac
 node account/create-accounts.mjs --dry-run --start 1 --end 3
 node account/create-accounts.mjs --start 1 --end 5 --api-key "$FIVESIM_API_KEY" --region russia
 
+# ADB/Android account creation (requires connected Android device/emulator)
+node account/create-accounts-adb.mjs --dry-run --count 1
+node account/create-accounts-adb.mjs --count 1 --api-key "$FIVESIM_API_KEY" --region indonesia
+
+# CDP mode account creation (uses real Chrome with remote debugging)
+node account/create-accounts.mjs --cdp --start 1 --end 1 --api-key "$FIVESIM_API_KEY"
+
+# Appium account creation (requires Docker Android emulator)
+node account/create-accounts-appium.mjs --dry-run --count 3
+node account/create-accounts-appium.mjs --count 1 --api-key "$FIVESIM_API_KEY"
 # Age verification
 node account/verify-age.mjs --dry-run --start 1 --end 5
 node account/verify-age.mjs --start 1 --end 5 --api-key "$FIVESIM_API_KEY" --region russia
