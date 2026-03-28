@@ -58,6 +58,7 @@ const SKIP_LAUNCH = args.includes('--skip-launch');
 const SKIP_VERIFY = args.includes('--skip-verify');
 const SKIP_UNLOCK = args.includes('--skip-unlock');
 const DRY_RUN = args.includes('--dry-run');
+const HEADED = args.includes('--headed');
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`
@@ -75,6 +76,7 @@ Options:
   --skip-verify   Skip post-login verification
   --skip-unlock   Skip feature unlock phase
   --dry-run       Show what would be done without executing
+  --headed         Run browser in headed mode (enables HITL reCAPTCHA solving)
   --help          Show this help
 `);
   process.exit(0);
@@ -240,7 +242,7 @@ async function acquireTokensManual(emails) {
   });
 }
 
-async function acquireTokensAuto(emails, apiKey, region) {
+async function acquireTokensAuto(emails, apiKey, region, headed = false) {
   log('🤖', `Starting automated token acquisition for ${emails.length} account(s)`);
   log('📋', `Emails: ${emails.join(', ')}`);
 
@@ -249,12 +251,16 @@ async function acquireTokensAuto(emails, apiKey, region) {
     '--batch', emails.join(','),
     '--api-key', apiKey,
     '--region', region,
+    ...(headed ? ['--headed'] : []),
   ];
 
   return new Promise((resolve, reject) => {
     const child = spawn('node', autoArgs, {
       stdio: 'inherit',
-      env: { ...process.env, DISPLAY: process.env.DISPLAY || ':55' },
+      env: {
+        ...process.env,
+        DISPLAY: process.env.DISPLAY || ':55',
+      },
     });
 
     child.on('close', (code) => {
@@ -407,6 +413,7 @@ async function main() {
     SKIP_LAUNCH && 'skip-launch',
     SKIP_VERIFY && 'skip-verify',
     SKIP_UNLOCK && 'skip-unlock',
+    HEADED && 'headed',
   ].filter(Boolean).join(', ') || 'none'}`);
   console.log('');
 
@@ -503,7 +510,7 @@ async function main() {
       if (API_KEY) {
         log('🔄', 'Phase 2a: Trying automated token acquisition first');
         try {
-          await acquireTokensAuto(pendingEmails, API_KEY, FIVESIM_REGION);
+          await acquireTokensAuto(pendingEmails, API_KEY, FIVESIM_REGION, HEADED);
           log('✅', 'Automated token acquisition completed');
         } catch (err) {
           log('⚠️', `Automated acquisition failed: ${err.message}`);

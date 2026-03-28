@@ -158,6 +158,7 @@ async function runForAccount(browser, email, password, apiKey, region) {
     response_type: 'code',
     client_id: CLIENT_ID,
     redirect_uri: redirectUri,
+    login_hint: email,
   });
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 
@@ -185,14 +186,14 @@ async function runForAccount(browser, email, password, apiKey, region) {
     logStep(`Starting Antigravity auth: ${email}`);
 
     // 4. Navigate to OAuth URL
-    await page.goto(authUrl, { waitUntil: 'networkidle', timeout: 30_000 });
-    await delay(2000);
+    await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await delay(3000);
     await shot(page, email, 'initial');
 
     // 5. Google login — email
-    const emailInput = page.locator('input[type="email"]');
-    await emailInput.waitFor({ timeout: 10_000 });
-    await emailInput.fill(email);
+    const emailInput = page.locator('input[type="email"], input[name="identifier"]');
+    await emailInput.first().waitFor({ timeout: 30_000 });
+    await emailInput.first().fill(email);
     await page.locator('#identifierNext button, button:has-text("다음"), button:has-text("Next")').first().click();
     await delay(4000);
     await shot(page, email, 'after-email');
@@ -202,7 +203,43 @@ async function runForAccount(browser, email, password, apiKey, region) {
     if (postEmailUrl.includes('challenge/recaptcha') || postEmailUrl.includes('challenge/selection')
         || postEmailUrl.includes('deniedsigninrejected') || postEmailUrl.includes('challenge/dp')) {
       await shot(page, email, 'blocked-challenge');
-      throw new Error(`Login blocked by Google challenge: ${postEmailUrl.split('?')[0]}`);
+
+      if (HEADED) {
+        // HITL mode: pause for manual solving when browser is visible
+        logStep(`⚠️  reCAPTCHA detected for ${email} — waiting for manual solve in browser window...`);
+        logStep(`    URL: ${postEmailUrl.split('?')[0]}`);
+        logStep(`    Solve the challenge in the browser, then the script will auto-continue.`);
+
+        // Poll until the URL changes away from the challenge page (max 5 minutes)
+        const hitlTimeout = 5 * 60 * 1000;
+        const hitlStart = Date.now();
+        const getUrlSafe = async () => {
+          try {
+            return await Promise.race([
+              page.evaluate(() => window.location.href),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('url-timeout')), 5000)),
+            ]);
+          } catch { return postEmailUrl; }  // assume still on challenge if url() hangs
+        };
+        let hitlResolved = false;
+        while (Date.now() - hitlStart < hitlTimeout) {
+          await delay(3000);
+          const currentUrl = await getUrlSafe();
+          if (!currentUrl.includes('challenge/recaptcha') && !currentUrl.includes('challenge/selection')
+              && !currentUrl.includes('deniedsigninrejected') && !currentUrl.includes('challenge/dp')) {
+            logStep(`✅ Challenge resolved! Continuing auth flow for ${email}`);
+            await shot(page, email, 'challenge-resolved');
+            hitlResolved = true;
+            break;
+          }
+        }
+
+        if (!hitlResolved) {
+          throw new Error(`HITL timeout: reCAPTCHA not solved within 5 minutes for ${email}`);
+        }
+      } else {
+        throw new Error(`Login blocked by Google challenge: ${postEmailUrl.split('?')[0]}`);
+      }
     }
 
     // 6. Google login — password

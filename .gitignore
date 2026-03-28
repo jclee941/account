@@ -5,6 +5,8 @@ node_modules/
 .env
 .env.*
 
+.env.gmail
+.env.1password
 # Runtime artifacts
 screenshots/
 screenshots-adb/

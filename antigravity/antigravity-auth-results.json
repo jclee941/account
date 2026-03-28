@@ -1,0 +1,23 @@
+[
+  {
+    "email": "qws94302@gmail.com",
+    "success": false,
+    "refreshToken": "",
+    "accessToken": "",
+    "error": "HITL timeout: reCAPTCHA not solved within 5 minutes for qws94302@gmail.com"
+  },
+  {
+    "email": "qws94303@gmail.com",
+    "success": false,
+    "refreshToken": "",
+    "accessToken": "",
+    "error": "HITL timeout: reCAPTCHA not solved within 5 minutes for qws94303@gmail.com"
+  },
+  {
+    "email": "qws94304@gmail.com",
+    "success": false,
+    "refreshToken": "",
+    "accessToken": "",
+    "error": "HITL timeout: reCAPTCHA not solved within 5 minutes for qws94304@gmail.com"
+  }
+]

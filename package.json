@@ -17,6 +17,7 @@
     "jsqr": "^1.4.0",
     "pngjs": "^7.0.0",
     "rebrowser-playwright": "^1.52.0",
+    "webdriverio": "^8.46.0",
     "ws": "^8.19.0"
   }
 }
