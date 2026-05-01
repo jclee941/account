@@ -138,8 +138,8 @@ async function verifyAccount(email, password) {
 }
 
 // Test first account
-const testEmail = 'marmil980069@gmail.com';
-const testPassword = 'Bingogo123!';
+const testEmail = process.env.GMAIL_TEST_EMAIL || '';
+const testPassword = process.env.GMAIL_TEST_PASSWORD || '';
 
 console.log('═══════════════════════════════════════════════════');
 console.log('  Gmail Account Verifier');

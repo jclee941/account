@@ -1,171 +1,171 @@
-# Account Automation Workspace
+# 계정 자동화 워크스페이스
 
-Node.js ESM workspace for automated Gmail account creation, Antigravity IDE authentication, and OAuth credential management. Uses Playwright/Rebrowser for browser automation and 5sim for SMS verification.
+Gmail 계정 생성, Antigravity IDE 인증, OAuth 자격 증명 관리를 위한 Node.js ESM 워크스페이스. 브라우저 자동화에는 Playwright/Rebrowser를 사용하고, SMS 인증에는 5sim을 사용합니다.
 
-## Features
+## 기능
 
-- **Gmail Account Creation** — Batch creation with SMS verification via 5sim
-- **ADB/Android Automation** — Android Chrome automation via ADB
-- **CDP Mode** — Chrome DevTools Protocol for WebView automation
-- **Appium Support** — Docker Android emulator integration
-- **Antigravity Auth** — OAuth + SMS verification pipeline for Antigravity IDE
-- **MCP Server** — Tool-based account creation via Model Context Protocol
-- **Family Group** — Gmail family invitation/acceptance workflow
+- **Gmail 계정 생성** — 5sim을 통한 SMS 인증과 함께 일괄 생성
+- **ADB/Android 자동화** — ADB를 통한 Android Chrome 자동화
+- **CDP 모드** — WebView 자동화를 위한 Chrome DevTools Protocol
+- **Appium 지원** — Docker Android 에뮬레이터 통합
+- **Antigravity 인증** — Antigravity IDE용 OAuth + SMS 인증 파이프라인
+- **MCP 서버** — Model Context Protocol을 통한 도구 기반 계정 생성
+- **가족 그룹** — Gmail 가족 초대/수락 워크플로우
 
-## Requirements
+## 요구사항
 
 - Node.js 18+
 - npm
-- Playwright dependencies (installed via `npm install`)
-- Optional: ADB for Android automation
-- Optional: Docker for Appium emulator
+- Playwright 의존성 (`npm install`로 설치)
+- 선택: Android 자동화를 위한 ADB
+- 선택: Appium 에뮬레이터를 위한 Docker
 
-## Installation
+## 설치
 
 ```bash
 npm install
 npx playwright install
 ```
 
-## Quick Start
+## 빠른 시작
 
-### Gmail Account Creation
+### Gmail 계정 생성
 
 ```bash
-# Dry run (no real accounts created)
+# 드라이런 (실제 계정 생성 없음)
 node account/create-accounts.mjs --dry-run --start 1 --end 3
 
-# Production run with 5sim API key
+# 5sim API 키로 프로덕션 실행
 node account/create-accounts.mjs --start 1 --end 5 --api-key "$FIVESIM_API_KEY" --region russia
 ```
 
-### ADB/Android Mode
+### ADB/Android 모드
 
 ```bash
 node account/create-accounts-adb.mjs --dry-run --count 1
 node account/create-accounts-adb.mjs --count 1 --api-key "$FIVESIM_API_KEY" --region indonesia
 ```
 
-### Age Verification
+### 나이 인증
 
 ```bash
 node account/verify-age.mjs --dry-run --start 1 --end 5
 node account/verify-age.mjs --start 1 --end 5 --api-key "$FIVESIM_API_KEY" --region russia
 ```
 
-### MCP Server
+### MCP 서버
 
 ```bash
 node account/gmail-creator-mcp.mjs
 ```
 
-## Project Structure
+## 프로젝트 구조
 
 ```
 ./
-├── account/                       # Gmail account automation
-│   ├── create-accounts.mjs        # Primary account creation flow
-│   ├── create-accounts-adb.mjs    # ADB + Android Chrome automation
-│   ├── create-accounts-cdp.mjs    # CDP mode via WebView on ReDroid
-│   ├── create-accounts-appium.mjs # Appium + Docker Android emulator
-│   ├── family-group.mjs           # Family invite/accept flow
-│   ├── gmail-creator-mcp.mjs      # MCP server (4 tools)
-│   └── verify-age.mjs             # Age verification via 5sim SMS
-├── antigravity/                   # Antigravity IDE auth & verification
-│   ├── antigravity-auth.mjs       # OAuth + SMS verification pipeline
-│   ├── antigravity-pipeline.mjs   # End-to-end activation orchestrator
-│   ├── inject-vscdb-token.mjs     # VSCDB protobuf token injection
-│   ├── manual-token-acquire.mjs   # Manual-assisted OAuth token acquisition
-│   └── unlock-features.mjs        # 5sim SMS feature unlock
-├── oauth/                         # OAuth credential flows
-│   ├── oauth-login.mjs            # OAuth consent/login helper
-│   └── setup-gcp-oauth.mjs        # GCP OAuth credential setup
-├── lib/                           # Shared utilities
-│   ├── oauth-callback-server.mjs  # localhost OAuth callback server
-│   ├── token-exchange.mjs         # OAuth code→token exchange
-│   ├── google-auth-browser.mjs    # Google auth browser automation
-│   ├── browser-launch.mjs         # Browser launch helpers
-│   ├── cli-args.mjs               # CLI argument parser
-│   ├── adb-utils.mjs              # ADB command wrappers
-│   ├── sms-provider.mjs           # Modular SMS provider (5sim/sms-activate)
-│   ├── verification-pipeline.mjs  # 3-stage account verification
-│   ├── behavior-profile.mjs       # Human-like typing/mouse simulation
-│   └── cdp-utils.mjs              # Chrome DevTools Protocol utilities
-├── tests/                         # MCP server smoke + QA tests
+├── account/                       # Gmail 계정 자동화
+│   ├── create-accounts.mjs        # 주요 계정 생성 흐름
+│   ├── create-accounts-adb.mjs    # ADB + Android Chrome 자동화
+│   ├── create-accounts-cdp.mjs    # ReDroid WebView CDP 모드
+│   ├── create-accounts-appium.mjs # Appium + Docker Android 에뮬레이터
+│   ├── family-group.mjs           # 가족 초대/수락 흐름
+│   ├── gmail-creator-mcp.mjs      # MCP 서버 (4개 도구)
+│   └── verify-age.mjs             # 5sim SMS를 통한 나이 인증
+├── antigravity/                   # Antigravity IDE 인증 및 검증
+│   ├── antigravity-auth.mjs       # OAuth + SMS 인증 파이프라인
+│   ├── antigravity-pipeline.mjs   # 종단간 활성화 오케스트레이터
+│   ├── inject-vscdb-token.mjs     # VSCDB protobuf 토큰 주입
+│   ├── manual-token-acquire.mjs   # 수동 지원 OAuth 토큰 획득
+│   └── unlock-features.mjs        # 5sim SMS 기능 잠금 해제
+├── oauth/                         # OAuth 자격 증명 흐름
+│   ├── oauth-login.mjs            # OAuth 동의/로그인 도우미
+│   └── setup-gcp-oauth.mjs        # GCP OAuth 자격 증명 설정
+├── lib/                           # 공유 유틸리티
+│   ├── oauth-callback-server.mjs  # localhost OAuth 콜백 서버
+│   ├── token-exchange.mjs         # OAuth 코드→토큰 교환
+│   ├── google-auth-browser.mjs    # Google 인증 브라우저 자동화
+│   ├── browser-launch.mjs         # 브라우저 실행 도우미
+│   ├── cli-args.mjs               # CLI 인수 파서
+│   ├── adb-utils.mjs              # ADB 명령 래퍼
+│   ├── sms-provider.mjs           # 모듈식 SMS 제공자 (5sim/sms-activate)
+│   ├── verification-pipeline.mjs  # 3단계 계정 검증
+│   ├── behavior-profile.mjs       # 인간 같은 타이핑/마우스 시뮬레이션
+│   └── cdp-utils.mjs              # Chrome DevTools Protocol 유틸리티
+├── tests/                         # MCP 서버 스모크 + QA 테스트
 │   ├── gmail-creator-mcp-smoke.mjs
 │   └── qa-manual.mjs
-├── accounts.csv                   # Generated account state
-├── gcp-oauth.keys.json            # Local OAuth keys artifact (runtime output)
-└── package.json                   # Dependencies
+├── accounts.csv                   # 생성된 계정 상태
+├── gcp-oauth.keys.json            # 로컬 OAuth 키 아티팩트 (런타임 출력)
+└── package.json                   # 의존성
 ```
 
-## Environment Variables
+## 환경 변수
 
-| Variable | Required | Default | Description |
+| 변수 | 필수 | 기본값 | 설명 |
 |----------|----------|---------|-------------|
-| `FIVESIM_API_KEY` | Yes (unless `--dry-run`) | — | 5sim SMS verification API key |
-| `SMS_PROVIDER` | No | `5sim` | SMS provider selection |
-| `FIVESIM_REGION` | No | `russia` | 5sim phone number region |
-| `PROXY_SERVER` | No | — | HTTP proxy address for browser |
-| `PROXY_USER` | No | — | Proxy authentication username |
-| `PROXY_PASS` | No | — | Proxy authentication password |
-| `SMS_API_KEY` | No | — | Alternative SMS API key |
-| `GMAIL_OAUTH_CLIENT_ID` | No | — | Google OAuth Client ID |
-| `GMAIL_OAUTH_CLIENT_SECRET` | No | — | Google OAuth Client Secret |
-| `GMAIL_OAUTH_REDIRECT_URI` | No | `http://localhost:3000/oauth2callback` | OAuth redirect URI |
+| `FIVESIM_API_KEY` | 예 (`--dry-run` 제외) | — | 5sim SMS 인증 API 키 |
+| `SMS_PROVIDER` | 아니오 | `5sim` | SMS 제공자 선택 |
+| `FIVESIM_REGION` | 아니오 | `russia` | 5sim 전화번호 지역 |
+| `PROXY_SERVER` | 아니오 | — | 브라우저용 HTTP 프록시 주소 |
+| `PROXY_USER` | 아니오 | — | 프록시 인증 사용자 이름 |
+| `PROXY_PASS` | 아니오 | — | 프록시 인증 비밀번호 |
+| `SMS_API_KEY` | 아니오 | — | 대체 SMS API 키 |
+| `GMAIL_OAUTH_CLIENT_ID` | 아니오 | — | Google OAuth 클라이언트 ID |
+| `GMAIL_OAUTH_CLIENT_SECRET` | 아니오 | — | Google OAuth 클라이언트 비밀 |
+| `GMAIL_OAUTH_REDIRECT_URI` | 아니오 | `http://localhost:3000/oauth2callback` | OAuth 리디렉션 URI |
 
-## Commands
+## 명령어
 
 ```bash
-# Primary account creation
+# 주요 계정 생성
 node account/create-accounts.mjs --dry-run --start 1 --end 3
 node account/create-accounts.mjs --start 1 --end 5 --api-key "$FIVESIM_API_KEY" --region russia
 
-# ADB/Android account creation
+# ADB/Android 계정 생성
 node account/create-accounts-adb.mjs --dry-run --count 1
 node account/create-accounts-adb.mjs --count 1 --api-key "$FIVESIM_API_KEY" --region indonesia
 
-# CDP mode
+# CDP 모드
 node account/create-accounts.mjs --cdp --start 1 --end 1 --api-key "$FIVESIM_API_KEY"
 
 # Appium
 node account/create-accounts-appium.mjs --dry-run --count 3
 node account/create-accounts-appium.mjs --count 1 --api-key "$FIVESIM_API_KEY"
 
-# Age verification
+# 나이 인증
 node account/verify-age.mjs --dry-run --start 1 --end 5
 node account/verify-age.mjs --start 1 --end 5 --api-key "$FIVESIM_API_KEY" --region russia
 
-# MCP server
+# MCP 서버
 node account/gmail-creator-mcp.mjs
 
-# MCP tests
+# MCP 테스트
 node tests/gmail-creator-mcp-smoke.mjs
 node tests/qa-manual.mjs
 
-# Family & OAuth
+# 가족 및 OAuth
 node account/family-group.mjs --dry-run --start 1 --end 3
 node oauth/oauth-login.mjs --help
 node oauth/setup-gcp-oauth.mjs --headed
 
 # Antigravity
 node antigravity/antigravity-auth.mjs --batch qws94301@gmail.com --api-key "$FIVESIM_API_KEY"
-ode antigravity/unlock-features.mjs qws94301@gmail.com --api-key "$FIVESIM_API_KEY"
+node antigravity/unlock-features.mjs qws94301@gmail.com --api-key "$FIVESIM_API_KEY"
 
-# Antigravity pipeline
+# Antigravity 파이프라인
 node antigravity/antigravity-pipeline.mjs --dry-run --accounts qws94201@gmail.com
 node antigravity/antigravity-pipeline.mjs --from-csv --accounts qws94201@gmail.com --region indonesia
 ```
 
-## Notes
+## 참고사항
 
-- Scripts are ESM (`.mjs`).
-- Use `--dry-run` to preview operations without creating real accounts.
-- Headed browser mode requires an X server; use `xvfb-run` on headless Linux.
-- Never commit real secrets; use environment variables or `.env` files (gitignored).
-- MCP server uses `@modelcontextprotocol/sdk` with stdio transport. All logging must go to `stderr`, never `stdout`.
-- Account pattern: `qws943XX@gmail.com` (XX = 01–50).
+- 스크립트는 ESM (`.mjs`)입니다.
+- 실제 계정 생성 없이 작업을 미리 보려면 `--dry-run`을 사용하세요.
+- 헤드 브라우저 모드에는 X 서버가 필요합니다; 헤드리스 Linux에서는 `xvfb-run`을 사용하세요.
+- 실제 비밀을 커밋하지 마세요; 환경 변수 또는 `.env` 파일 (gitignored)을 사용하세요.
+- MCP 서버는 `@modelcontextprotocol/sdk`와 stdio 전송을 사용합니다. 모든 로깅은 `stderr`로, `stdout`으로는 안 됩니다.
+- 계정 패턴: `qws943XX@gmail.com` (XX = 01–50).
 
-## License
+## 라이선스
 
-Private — internal use only.
+비공개 — 내부 사용 전용.

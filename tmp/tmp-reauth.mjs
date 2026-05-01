@@ -3,8 +3,8 @@ import crypto from 'node:crypto';
 import { createCallbackServer } from './lib/oauth-callback-server.mjs';
 import { exchangeAuthCode } from './lib/token-exchange.mjs';
 
-const CLIENT_ID = '<REDACTED>';
-const CLIENT_SECRET = '<REDACTED>';
+const CLIENT_ID = process.env.GMAIL_OAUTH_CLIENT_ID;
+const CLIENT_SECRET = process.env.GMAIL_OAUTH_CLIENT_SECRET;
 const SCOPES = [
   'https://www.googleapis.com/auth/cloud-platform',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -12,8 +12,8 @@ const SCOPES = [
   'https://www.googleapis.com/auth/cclog',
   'https://www.googleapis.com/auth/experimentsandconfigs',
 ];
-const EMAIL = 'dfsagdsg572@gmail.com';
-const PASSWORD = 'bingogo1';
+const EMAIL = process.env.GMAIL_EMAIL || '';
+const PASSWORD = process.env.GMAIL_PASSWORD || '';
 
 const STEALTH_ARGS = [
   '--disable-blink-features=AutomationControlled',

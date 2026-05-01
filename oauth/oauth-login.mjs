@@ -9,12 +9,12 @@ import { createCallbackServer } from '../lib/oauth-callback-server.mjs';
 import { automateGoogleAuth } from '../lib/google-auth-browser.mjs';
 import { exchangeAuthCode } from '../lib/token-exchange.mjs';
 
-const CLIENT_ID = '<REDACTED>';
-const CLIENT_SECRET = '<REDACTED>';
+const CLIENT_ID = process.env.GMAIL_OAUTH_CLIENT_ID;
+const CLIENT_SECRET = process.env.GMAIL_OAUTH_CLIENT_SECRET;
 const REDIRECT_URI = 'http://localhost:3000/oauth2callback';
 const CALLBACK_TIMEOUT_MS = 180_000;
 const AUTH_URL =
-  'https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.modify%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.settings.basic&response_type=code&client_id=<REDACTED>&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Foauth2callback';
+  `https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.modify%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.settings.basic&response_type=code&client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
 
 const { help: HELP, headed: HEADED, batch: BATCH, positional } = parseCliArgs();
 const EMAIL = positional[0] || process.env.GMAIL_EMAIL || '';

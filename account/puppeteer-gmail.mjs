@@ -11,7 +11,7 @@ import { join } from 'path';
 const __dirname = import.meta.dirname;
 
 // Configuration
-const PASSWORD = 'bingogo1';
+const PASSWORD = process.env.GMAIL_PASSWORD || '';
 const FIRST_NAMES = ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles'];
 const LAST_NAMES = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez'];
 

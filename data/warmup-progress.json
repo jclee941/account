@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "accounts": {
+    "brownd210562@gmail.com": {
+      "email": "brownd210562@gmail.com",
+      "warmupStartDate": "2026-03-31",
+      "createdAt": "2026-03-31T06:37:14.006Z",
+      "updatedAt": "2026-03-31T09:40:54.693Z",
+      "totals": {
+        "sentAttempts": 1,
+        "sentSuccess": 1,
+        "inboxChecks": 1,
+        "inboxSuccess": 1
+      },
+      "days": {
+        "1": {
+          "dayNumber": 1,
+          "date": "2026-03-31",
+          "scheduleLabel": "days_1_3",
+          "targetEmails": 5,
+          "newsletterCount": 5,
+          "regularSentCount": 0,
+          "inboxChecks": 4,
+          "actions": [
+            {
+              "type": "imap_inbox_check",
+              "payload": {
+                "checkIndex": 1
+              }
+            },
+            {
+              "type": "newsletter_subscribe",
+              "payload": {
+                "sourceName": "The Hustle",
+                "to": "trends@thehustle.co"
+              }
+            },
+            {
+              "type": "imap_inbox_check",
+              "payload": {
+                "checkIndex": 4
+              }
+            },
+            {
+              "type": "newsletter_subscribe",
+              "payload": {
+                "sourceName": "Lenny's Newsletter",
+                "to": "hello@lennysnewsletter.com"
+              }
+            },
+            {
+              "type": "imap_inbox_check",
+              "payload": {
+                "checkIndex": 3
+              }
+            },
+            {
+              "type": "imap_inbox_check",
+              "payload": {
+                "checkIndex": 2
+              }
+            },
+            {
+              "type": "newsletter_subscribe",
+              "payload": {
+                "sourceName": "Morning Brew",
+                "to": "newsletter@morningbrew.com"
+              }
+            },
+            {
+              "type": "newsletter_subscribe",
+              "payload": {
+                "sourceName": "TLDR",
+                "to": "hello@tldr.tech"
+              }
+            },
+            {
+              "type": "newsletter_subscribe",
+              "payload": {
+                "sourceName": "Ben's Bites",
+                "to": "hi@bensbites.com"
+              }
+            }
+          ],
+          "actionCursor": 2,
+          "actionResults": [
+            {
+              "index": 0,
+              "action": {
+                "type": "imap_inbox_check",
+                "payload": {
+                  "checkIndex": 1
+                }
+              },
+              "startedAt": "2026-03-31T06:37:14.948Z",
+              "finishedAt": "2026-03-31T06:37:14.948Z",
+              "ok": true,
+              "note": "dry-run simulated",
+              "detail": {
+                "dryRun": true
+              }
+            },
+            {
+              "index": 1,
+              "action": {
+                "type": "newsletter_subscribe",
+                "payload": {
+                  "sourceName": "The Hustle",
+                  "to": "trends@thehustle.co"
+                }
+              },
+              "startedAt": "2026-03-31T09:40:54.692Z",
+              "finishedAt": "2026-03-31T09:40:54.693Z",
+              "ok": true,
+              "note": "dry-run simulated",
+              "detail": {
+                "dryRun": true
+              }
+            }
+          ],
+          "status": "in_progress",
+          "startedAt": "2026-03-31T06:37:14.007Z",
+          "completedAt": null
+        }
+      },
+      "completedDays": [],
+      "interruptedAt": null,
+      "lastError": null
+    }
+  }
+}

@@ -1,0 +1,28 @@
+timestamp,email,password,firstName,lastName,phone,status,error
+2026-04-19T12:04:29.746Z,qws941201@gmail.com,bingogo1,Brandon,Johnson,,failed,cursor.click is not a function
+2026-04-19T12:06:31.425Z,qws941201@gmail.com,bingogo1,Jeffrey,Young,,failed,cursor.click is not a function
+2026-04-19T12:09:22.053Z,qws941201@gmail.com,bingogo1,Kevin,Young,,failed,Selector input[type="email"], input[name="email"] is not present in DOM
+2026-04-19T12:11:29.476Z,qws941202@gmail.com,bingogo1,Kevin,Smith,,failed,Selector input[type="email"], input[name="email"] is not present in DOM
+2026-04-19T12:11:54.625Z,qws941201@gmail.com,bingogo1,Anthony,Walker,,failed,locator.boundingBox: Error: strict mode violation: locator('button:has-text("Continue"), button[type="submit"]') resolved to 5 elements:
+    1) <button type="button" class="btn relative group-focus-within/dialog:focus-visible:[outline-width:1.5px] group-focus-within/dialog:focus-visible:[outline-offset:2.5px] group-focus-within/dialog:focus-visible:[outline-style:solid] group-focus-within/dialog:focus-visible:[outline-color:var(--text-primary)] btn-secondary h-13 rounded-full text-base">…</button> aka getByRole('button', { name: 'Continue with Google' })
+    2) <button type="button" class="btn relative group-focus-within/dialog:focus-visible:[outline-width:1.5px] group-focus-within/dialog:focus-visible:[outline-offset:2.5px] group-focus-within/dialog:focus-visible:[outline-style:solid] group-focus-within/dialog:focus-visible:[outline-color:var(--text-primary)] btn-secondary h-13 rounded-full text-base">…</button> aka getByRole('button', { name: 'Continue with Apple' })
+    3) <button type="button" class="btn relative group-focus-within/dialog:focus-visible:[outline-width:1.5px] group-focus-within/dialog:focus-visible:[outline-offset:2.5px] group-focus-within/dialog:focus-visible:[outline-style:solid] group-focus-within/dialog:focus-visible:[outline-color:var(--text-primary)] btn-secondary h-13 rounded-full text-base">…</button> aka getByRole('button', { name: 'Continue with Microsoft' })
+    4) <button type="button" class="btn relative group-focus-within/dialog:focus-visible:[outline-width:1.5px] group-focus-within/dialog:focus-visible:[outline-offset:2.5px] group-focus-within/dialog:focus-visible:[outline-style:solid] group-focus-within/dialog:focus-visible:[outline-color:var(--text-primary)] btn-secondary h-13 rounded-full text-base">…</button> aka getByRole('button', { name: 'Continue with phone' })
+    5) <button type="submit" class="btn relative group-focus-within/dialog:focus-visible:[outline-width:1.5px] group-focus-within/dialog:focus-visible:[outline-offset:2.5px] group-focus-within/dialog:focus-visible:[outline-style:solid] group-focus-within/dialog:focus-visible:[outline-color:var(--text-primary)] btn-primary mt-1.5 h-13 w-full rounded-full text-base">…</button> aka getByRole('button', { name: 'Continue', exact: true })
+
+Call log:
+[2m  - waiting for locator('button:has-text("Continue"), button[type="submit"]')[22m
+
+2026-04-19T12:14:09.974Z,qws941201@gmail.com,bingogo1,Steven,King,,failed,Selector input[type="password"] is not present in DOM
+2026-04-19T12:22:21.916Z,qws941201@gmail.com,bingogo1,Charles,Taylor,,failed,page.goto: Timeout 60000ms exceeded.
+Call log:
+[2m  - navigating to "https://chatgpt.com/", waiting until "networkidle"[22m
+
+2026-04-19T12:37:34.194Z,qws941201@gmail.com,bingogo1,Brian,Williams,,failed,locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('input[type="password"]').first()[22m
+
+2026-04-19T12:43:30.772Z,qws941201@gmail.com,bingogo1,David,Rodriguez,,failed,locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('input[type="password"]').first()[22m
+
