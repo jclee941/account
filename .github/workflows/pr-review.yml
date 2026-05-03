@@ -82,7 +82,7 @@ jobs:
       - name: Run PR review
         working-directory: pr-agent-src
         env:
-          OPENAI_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          OPENAI.KEY: ${{ secrets.CLIPROXY_API_KEY }}
           OPENAI.API_BASE: https://cliproxy.jclee.me/v1
           CONFIG.MODEL: kimi-k2.6
           CONFIG.FALLBACK_MODELS: '["kimi-k2.5", "claude-sonnet-4-6"]'
@@ -137,7 +137,7 @@ jobs:
             exit "$status"
           fi
 
-          if grep -E "BoxKeyError|GitHub token is required|Failed to get git provider|Traceback" /tmp/pr-agent.log; then
+          if grep -E "BoxKeyError|GitHub token is required|Failed to get git provider|Failed to generate prediction with any model|Failed to review PR|AuthenticationError|Traceback" /tmp/pr-agent.log; then
             echo "::error::pr-agent reported a fatal error but exited 0 (silent failure)"
             exit 1
           fi
