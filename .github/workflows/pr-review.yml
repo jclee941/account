@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   pr_review:
-    if: github.event.pull_request.user.login == 'jclee941'
+    # Run for all PRs except draft and dependabot[bot] (dependency bumps
+    # are handled by dependabot-auto-merge.yml). Bots/forks are still
+    # reviewed because GITHUB_TOKEN has read-only on cross-repo PRs and
+    # the workflow doesn't expose secrets to PR code.
+    if: github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     name: PR review via CLIProxyAPI
     timeout-minutes: 15

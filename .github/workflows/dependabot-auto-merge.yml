@@ -1,19 +1,19 @@
 name: Dependabot Auto-Merge
 
-# Auto-approves and merges Dependabot PRs after CI passes.
-# Triggers on PR events from dependabot[bot] only.
+# Auto-approves and enables auto-merge for Dependabot PRs.
+# Auto-merge waits for required status checks (configured via branch protection)
+# before actually merging.
 #
 # Merge policy (conservative):
-#   - patch + minor updates  → auto-merge (squash)
-#   - major updates          → auto-approve only (manual merge)
-#   - github-actions ecosystem  → auto-merge regardless of bump (low blast radius)
+#   - patch + minor updates  -> auto-merge (squash)
+#   - github_actions ecosystem -> auto-merge regardless of bump (low blast radius)
+#   - major updates outside github_actions -> comment, manual review
+#   - unknown update-type    -> comment, manual review (e.g. pip metadata gaps)
 #
 # Required setup on each repo:
 #   - allow_auto_merge=true (Public repos: free; Private: Pro/Team only)
-#   - branch protection rule on default branch with status checks (so auto-merge waits for them)
-#
-# If branch protection isn't set, GitHub merges immediately on enable, which is OK
-# because the workflow checks `pull_request` (not `pull_request_target`) and runs on the PR head.
+#   - branch protection rule on default branch with required status checks
+#     (so auto-merge actually waits for CI before merging)
 
 on:
   pull_request:
@@ -34,12 +34,14 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Approve PR
+      - name: Approve safe updates
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.package-ecosystem == 'github_actions' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr review --approve "$PR_URL" --body "Auto-approved: ${{ steps.meta.outputs.dependency-names }} ${{ steps.meta.outputs.update-type }}"
+          DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+        run: gh pr review --approve "$PR_URL" --body "Auto-approved by dependabot-auto-merge ($DEP_NAMES, $UPDATE_TYPE)"
 
       - name: Enable auto-merge for safe updates
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.package-ecosystem == 'github_actions' }}
@@ -48,9 +50,19 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr merge --auto --squash "$PR_URL"
 
-      - name: Comment on major update
+      - name: Flag major updates for manual review
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-major' && steps.meta.outputs.package-ecosystem != 'github_actions' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr comment "$PR_URL" --body "Major version bump for ${{ steps.meta.outputs.dependency-names }} — manual review required."
+          DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
+        run: gh pr comment "$PR_URL" --body "Major version bump for $DEP_NAMES - manual review required."
+
+      - name: Flag unknown update type for manual review
+        if: ${{ steps.meta.outputs.update-type == '' || steps.meta.outputs.update-type == 'null' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
+          ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
+        run: gh pr comment "$PR_URL" --body "Dependabot did not report a SemVer update-type for $DEP_NAMES (ecosystem=$ECOSYSTEM). Manual review required."
