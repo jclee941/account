@@ -37,7 +37,7 @@ PR 제목 형식 (Conventional Commits):
 
 - [ ] 후방 호환성 영향 없음
 - [ ] 보안 영향 없음 (있다면 `security-review` 라벨 부착)
-- [ ] 다운스트림 11개 리포에 자동 동기화됨 (`scripts/deploy-to-repos.go` 변경 시)
+- [ ] 다운스트림 11개 리포에 자동 동기화됨 (`scripts/cmd/deploy-to-repos/main.go` 변경 시)
 
 ## Checklist
 
