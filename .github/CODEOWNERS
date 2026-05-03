@@ -1,0 +1,27 @@
+# CODEOWNERS for jclee941/.github
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/managing-repository-settings/about-code-owners
+#
+# Order matters - the LAST matching pattern takes precedence.
+
+# Default owner
+*                                   @jclee941
+
+# Workflow + automation source of truth
+/.github/workflows/                 @jclee941
+/.github/dependabot.yml             @jclee941
+/scripts/                           @jclee941
+
+# pr-agent fork-local config
+/.pr_agent.toml                     @jclee941
+/pr_agent/settings/configuration.toml @jclee941
+
+# Security-sensitive
+/.github/workflows/security/        @jclee941
+/.github/workflows/codeql.yml       @jclee941
+/.github/workflows/gitleaks.yml     @jclee941
+/.github/CODEOWNERS                 @jclee941
+
+# Docs / templates
+/docs/                              @jclee941
+/AGENTS.md                          @jclee941
+/README.md                          @jclee941

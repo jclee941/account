@@ -1,0 +1,63 @@
+name: Gitleaks
+
+# Deterministic secret-pattern scan on every PR + push.
+# Complements auto-hardcode-scan.yml (weekly, regex-based) and
+# pr-review.yml (AI-based) by catching API keys, tokens, certs at gate time.
+#
+# Scope:
+#   - PR scans: gitleaks-action@v2 calls `gitleaks detect` over the PR commit
+#     range (`${baseRef}^..${headRef}` with --first-parent --no-merges). It
+#     reports leaks introduced by commits in this PR. It is NOT a strict
+#     base..head file-diff scan; secrets that appear and disappear within the
+#     PR commit series can still be flagged. Use `.gitleaksignore` for
+#     intentional fixtures.
+#   - Push scans: scans the new tip's reachable history.
+#
+# fetch-depth: 0 is REQUIRED for both events. The action references PR
+# commits by explicit SHA (${baseRef}^..${headRef}), so shallow clones can
+# break multi-commit PR scans. The upstream gitleaks-action README also
+# recommends fetch-depth: 0.
+#
+# Baseline: a repo-local `.gitleaks.toml` at the repository root is auto-
+# detected by the gitleaks CLI. Do NOT set GITLEAKS_CONFIG to a path that
+# might not exist - that hard-fails the action across all downstream repos.
+# When deploying to a downstream repo with pre-existing historical findings,
+# add a `.gitleaksignore` (one fingerprint per line) instead of blocking the
+# required check.
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: gitleaks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE only required for organization-scope scanning.
+          GITLEAKS_NOTIFY_USER_LIST: '@jclee941'
+          GITLEAKS_ENABLE_COMMENTS: 'true'
+          GITLEAKS_ENABLE_SUMMARY: 'true'
+          # GITLEAKS_CONFIG intentionally unset - gitleaks CLI auto-detects
+          # repo-local .gitleaks.toml. Setting it to a non-existent path
+          # would hard-fail the action across all downstream repos.

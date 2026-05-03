@@ -11,3 +11,29 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+
+  # Python dependencies (pyproject.toml + requirements*.txt)
+  # Auto-merge policy in dependabot-auto-merge.yml: patch + minor → squash;
+  # major → manual review.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      python-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Go scripts (go.mod) - none yet, but ready when scripts/ gets a go.mod
+  # - package-ecosystem: "gomod"
+  #   directory: "/scripts"
+  #   schedule:
+  #     interval: "weekly"
