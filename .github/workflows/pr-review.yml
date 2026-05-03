@@ -86,7 +86,10 @@ jobs:
           CONFIG.AI_TIMEOUT: "180"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Tell pr-agent to review the upstream caller's PR, not this repo's.
-          GITHUB.PR_URL: ${{ github.event.pull_request.html_url }}
+          # Note: env names with dots (e.g. GITHUB.PR_URL) are valid for
+          # pr-agent settings via dynaconf, but bash cannot expand them.
+          # Use a shell-safe alias for the run step instead.
+          PR_URL: ${{ github.event.pull_request.html_url }}
           PR_REVIEWER.EXTRA_INSTRUCTIONS: |
             이 리뷰는 표준 코드 리뷰 모드입니다.
             다음 관점에서 체계적으로 점검하십시오.
@@ -102,4 +105,4 @@ jobs:
 
           PR_DESCRIPTION.EXTRA_INSTRUCTIONS: |
             PR 설명은 한국어로 작성하십시오.
-        run: .venv/bin/python -m pr_agent.cli --pr_url "$GITHUB_PR_URL" review
+        run: .venv/bin/python -m pr_agent.cli --pr_url "$PR_URL" review
