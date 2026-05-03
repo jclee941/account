@@ -88,6 +88,7 @@ jobs:
           CONFIG.FALLBACK_MODELS: '["kimi-k2.5", "claude-sonnet-4-6"]'
           CONFIG.RESPONSE_LANGUAGE: ko
           CONFIG.AI_TIMEOUT: "180"
+          CONFIG.CUSTOM_MODEL_MAX_TOKENS: "128000"
           GITHUB__USER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # NOTE: Dynaconf maps `GITHUB__USER_TOKEN` (double underscore) to the nested setting
           # `settings.github.user_token` because pr-agent's config_loader uses `envvar_prefix=False`
