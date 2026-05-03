@@ -1,5 +1,13 @@
 name: PR Review (CLIProxyAPI)
 
+# Posts an automated AI code review against any non-draft PR.
+# Skips dependabot[bot] (handled by dependabot-auto-merge.yml).
+#
+# This workflow is downstream-portable: it does NOT require the host repo
+# to contain pr-agent source. It clones jclee941/.github at a separate
+# path and installs pr-agent from there, then runs the review against
+# the host repo's PR via the GitHub API.
+
 on:
   pull_request:
     types: [opened, reopened, ready_for_review, synchronize]
@@ -11,31 +19,35 @@ permissions:
 
 jobs:
   pr_review:
-    # Run for all PRs except draft and dependabot[bot] (dependency bumps
-    # are handled by dependabot-auto-merge.yml). Bots/forks are still
-    # reviewed because GITHUB_TOKEN has read-only on cross-repo PRs and
-    # the workflow doesn't expose secrets to PR code.
     if: github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     name: PR review via CLIProxyAPI
     timeout-minutes: 15
 
     steps:
-      - name: Check out PR head SHA
+      - name: Check out pr-agent source from jclee941/.github
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          repository: jclee941/.github
+          ref: master
+          path: pr-agent-src
           fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - name: Cache pip dependencies
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml', 'requirements.txt') }}
+          key: ${{ runner.os }}-pr-review-${{ hashFiles('pr-agent-src/pyproject.toml', 'pr-agent-src/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-pr-review-
 
       - name: Install pr-agent
+        working-directory: pr-agent-src
         run: |
           python3 -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
@@ -46,6 +58,11 @@ jobs:
           CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
         run: |
           set -e
+          if [ -z "$CLIPROXY_API_KEY" ]; then
+            echo "ERROR: CLIPROXY_API_KEY secret is not set on this repo."
+            echo "Add the secret via: gh secret set CLIPROXY_API_KEY --repo $GITHUB_REPOSITORY"
+            exit 1
+          fi
           HTTP_CODE=$(curl -sS -o /tmp/cli_proxy_test.json -w '%{http_code}' \
             --max-time 15 \
             https://cliproxy.jclee.me/v1/models \
@@ -56,31 +73,33 @@ jobs:
             exit 1
           fi
           MODEL_COUNT=$(python3 -c "import json; print(len(json.load(open('/tmp/cli_proxy_test.json'))['data']))")
-          echo "cli_proxy OK — $MODEL_COUNT models available"
+          echo "cli_proxy OK - $MODEL_COUNT models available"
 
       - name: Run PR review
+        working-directory: pr-agent-src
         env:
           OPENAI_KEY: ${{ secrets.CLIPROXY_API_KEY }}
           OPENAI.API_BASE: https://cliproxy.jclee.me/v1
           CONFIG.MODEL: kimi-k2.6
           CONFIG.FALLBACK_MODELS: '["kimi-k2.5", "claude-sonnet-4-6"]'
           CONFIG.RESPONSE_LANGUAGE: ko
-          CONFIG.AI_TIMEOUT: '180'
+          CONFIG.AI_TIMEOUT: "180"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Tell pr-agent to review the upstream caller's PR, not this repo's.
+          GITHUB.PR_URL: ${{ github.event.pull_request.html_url }}
           PR_REVIEWER.EXTRA_INSTRUCTIONS: |
             이 리뷰는 표준 코드 리뷰 모드입니다.
-            다음 관점에서 체계적으로 점검하십시오:
+            다음 관점에서 체계적으로 점검하십시오.
 
-            1. **보안**: SQL Injection, XSS, 인증/인가, secrets 노출
-            2. **정확성**: 논리 오류, 경쟁조건, edge case 미처리
-            3. **성능**: 불필요한 쿼리, 메모리 누수, 비효율 알고리즘
-            4. **유지보수성**: 코드 중복, 과도한 복잡성, 테스트 부재
-            5. **문서화**: README.md, API 문서, 주석/독스트링, PR 설명
+            1. 보안: SQL Injection, XSS, 인증/인가, secrets 노출
+            2. 정확성: 논리 오류, 경쟁조건, edge case 미처리
+            3. 성능: 불필요한 쿼리, 메모리 누수, 비효율 알고리즘
+            4. 유지보수성: 코드 중복, 과도한 복잡성, 테스트 부재
+            5. 문서화: README.md, API 문서, 주석/독스트링, PR 설명
 
             각 이슈에 번호를 부여하고, 심각도([CRITICAL] [WARNING] [INFO])와
             파일명+라인 번호를 명시하십시오. 개선 제안에는 구체적인 코드 예시를 포함하십시오.
 
           PR_DESCRIPTION.EXTRA_INSTRUCTIONS: |
             PR 설명은 한국어로 작성하십시오.
-        run: |
-          .venv/bin/python -m pr_agent.servers.github_action_runner
+        run: .venv/bin/python -m pr_agent.cli --pr_url "$GITHUB_PR_URL" review
