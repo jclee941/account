@@ -89,6 +89,18 @@ jobs:
           CONFIG.RESPONSE_LANGUAGE: ko
           CONFIG.AI_TIMEOUT: "180"
           CONFIG.CUSTOM_MODEL_MAX_TOKENS: "128000"
+          # Quality knobs — produce richer review output even on small diffs.
+          # See pr_agent/tools/pr_reviewer.py:85-94 for toggle->prompt mapping.
+          PR_REVIEWER.REQUIRE_SCORE_REVIEW: "true"
+          PR_REVIEWER.REQUIRE_TESTS_REVIEW: "true"
+          PR_REVIEWER.REQUIRE_ESTIMATE_EFFORT_TO_REVIEW: "true"
+          PR_REVIEWER.REQUIRE_ESTIMATE_CONTRIBUTION_TIME_COST: "true"
+          PR_REVIEWER.REQUIRE_CAN_BE_SPLIT_REVIEW: "true"
+          PR_REVIEWER.REQUIRE_SECURITY_REVIEW: "true"
+          PR_REVIEWER.REQUIRE_TODO_SCAN: "true"
+          PR_REVIEWER.REQUIRE_TICKET_ANALYSIS_REVIEW: "true"
+          PR_REVIEWER.NUM_MAX_FINDINGS: "5"
+          PR_REVIEWER.PUBLISH_OUTPUT_NO_SUGGESTIONS: "false"
           GITHUB__USER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # NOTE: Dynaconf maps `GITHUB__USER_TOKEN` (double underscore) to the nested setting
           # `settings.github.user_token` because pr-agent's config_loader uses `envvar_prefix=False`
@@ -138,7 +150,10 @@ jobs:
             exit "$status"
           fi
 
-          if grep -E "BoxKeyError|GitHub token is required|Failed to get git provider|Failed to generate prediction with any model|Failed to review PR|AuthenticationError|Traceback" /tmp/pr-agent.log; then
+          # Silent-failure guard — pr_agent CLI returns exit 0 on most logical
+          # failures (caught Exception at pr_reviewer.py:184). Patterns below are
+          # confirmed in source (file:line in commit message).
+          if grep -E "Failed to generate prediction with any model|Failed to review PR|Rate limit error during LLM inference|Unknown error during LLM inference|Error during LLM inference|Failed to publish (code suggestion|inline code comments fallback|diffview file summary|labels)|Cannot publish a comment if missing PR|Failed to get (diff files|merge base commit)|Failed to add AI metadata|Empty prediction|ai handler not set|Unable to decode JSON response|Failed to parse AI prediction|Rate limit exceeded for git provider|BoxKeyError|GitHub token is required|Failed to get git provider|AuthenticationError" /tmp/pr-agent.log | grep -vE "(Empty diff for PR:|PR has no files:|Incremental review is enabled.*but there are no new (files|commits)|Review output is not published|Incremental review is not supported)"; then
             echo "::error::pr-agent reported a fatal error but exited 0 (silent failure)"
             exit 1
           fi
