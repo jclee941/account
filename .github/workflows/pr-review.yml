@@ -17,6 +17,10 @@ permissions:
   pull-requests: write
   issues: write
 
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   pr_review:
     if: github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]'
@@ -84,11 +88,13 @@ jobs:
           CONFIG.FALLBACK_MODELS: '["kimi-k2.5", "claude-sonnet-4-6"]'
           CONFIG.RESPONSE_LANGUAGE: ko
           CONFIG.AI_TIMEOUT: "180"
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Tell pr-agent to review the upstream caller's PR, not this repo's.
-          # Note: env names with dots (e.g. GITHUB.PR_URL) are valid for
-          # pr-agent settings via dynaconf, but bash cannot expand them.
-          # Use a shell-safe alias for the run step instead.
+          GITHUB__USER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # NOTE: Dynaconf maps `GITHUB__USER_TOKEN` (double underscore) to the nested setting
+          # `settings.github.user_token` because pr-agent's config_loader uses `envvar_prefix=False`
+          # with the standard env_loader. Dot-notation names (e.g. `GITHUB.USER_TOKEN`) are NOT
+          # POSIX-valid identifiers; bash cannot `export` them. GitHub Actions can sometimes inject
+          # them anyway, but rely on the documented dynaconf double-underscore convention to keep
+          # the workflow portable to any runner.
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_REVIEWER.EXTRA_INSTRUCTIONS: |
             이 리뷰는 표준 코드 리뷰 모드입니다.
@@ -105,4 +111,33 @@ jobs:
 
           PR_DESCRIPTION.EXTRA_INSTRUCTIONS: |
             PR 설명은 한국어로 작성하십시오.
-        run: .venv/bin/python -m pr_agent.cli --pr_url "$PR_URL" review
+        run: |
+          set -eo pipefail
+
+          # Preflight: confirm dynaconf actually loaded the GitHub token
+          .venv/bin/python - <<'PY'
+          from pr_agent.config_loader import get_settings
+          tok = get_settings().get("github.user_token")
+          if not tok:
+              raise SystemExit("ERROR: settings.github.user_token is empty. "
+                               "Confirm GITHUB__USER_TOKEN env var is exported.")
+          print("preflight ok: github.user_token configured")
+          PY
+
+          # Run the review and capture both pr-agent's exit code and its log output.
+          # pr-agent's CLI exits 0 even on fatal provider errors (silent-success), so we
+          # additionally grep the captured log for known fatal patterns and fail the job.
+          set +e
+          .venv/bin/python -m pr_agent.cli --pr_url "$PR_URL" review 2>&1 | tee /tmp/pr-agent.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo "::error::pr-agent CLI exited with status $status"
+            exit "$status"
+          fi
+
+          if grep -E "BoxKeyError|GitHub token is required|Failed to get git provider|Traceback" /tmp/pr-agent.log; then
+            echo "::error::pr-agent reported a fatal error but exited 0 (silent failure)"
+            exit 1
+          fi
