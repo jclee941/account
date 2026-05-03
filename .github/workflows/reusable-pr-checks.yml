@@ -59,7 +59,7 @@ jobs:
         with:
           script: |
             const branch = context.payload.pull_request.head.ref;
-            const allowed = /^(feat|fix|hotfix|test|docs|refactor|chore|ci|perf|security|style|build|revert)\/.+/;
+            const allowed = /^(feat|fix|hotfix|test|docs|refactor|chore|ci|perf|security|style|build|revert|dependabot|fork|release)\/.+/;
             
             if (!allowed.test(branch)) {
               const body = `## 브랜치 이름 규칙 위반\n\n현재 브랜치: \`${branch}\`\n\n표준 prefix를 사용하세요:\n\n` +
