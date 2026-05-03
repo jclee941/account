@@ -1,0 +1,103 @@
+name: Security Audit
+
+on:
+  pull_request_target:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  security_review:
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.label.name == 'security-review' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'jclee941'
+
+    runs-on: ubuntu-latest
+    name: Deep security review via CLIProxyAPI
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out base branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-sec-${{ hashFiles('pyproject.toml', 'requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-sec-
+            ${{ runner.os }}-pip-
+
+      - name: Install pr-agent
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Verify cli_proxy connectivity
+        env:
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+        run: |
+          set -e
+          HTTP_CODE=$(curl -sS -o /tmp/cli_proxy_test.json -w '%{http_code}' \
+            --max-time 15 \
+            https://cliproxy.jclee.me/v1/models \
+            -H "Authorization: Bearer $CLIPROXY_API_KEY")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: cli_proxy returned HTTP $HTTP_CODE"
+            cat /tmp/cli_proxy_test.json
+            exit 1
+          fi
+          MODEL_COUNT=$(python3 -c "import json; print(len(json.load(open('/tmp/cli_proxy_test.json'))['data']))")
+          echo "cli_proxy OK — $MODEL_COUNT models available"
+
+      - name: Run deep security review
+        env:
+          OPENAI.KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          OPENAI.API_BASE: https://cliproxy.jclee.me/v1
+          CONFIG.MODEL: kimi-k2-thinking
+          CONFIG.FALLBACK_MODELS: '["kimi-k2.6", "claude-opus-4-7"]'
+          CONFIG.RESPONSE_LANGUAGE: ko
+          CONFIG.AI_TIMEOUT: '300'
+          CONFIG.CUSTOM_MODEL_MAX_TOKENS: "128000"
+          GITHUB__USER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_REVIEWER.REQUIRE_SECURITY_REVIEW: 'true'
+          PR_REVIEWER.REQUIRE_TESTS_REVIEW: 'false'
+          PR_REVIEWER.REQUIRE_ESTIMATE_EFFORT_TO_REVIEW: 'false'
+          PR_REVIEWER.NUM_MAX_FINDINGS: '10'
+          PR_REVIEWER.EXTRA_INSTRUCTIONS: |
+            이 리뷰는 심층 보안 감사(Deep Security Audit) 모드입니다.
+            다음 카테고리별로 체계적으로 점검하십시오:
+
+            1. 인증/인가(Authentication/Authorization)
+            2. 입력 검증(Input Validation)
+            3. 비밀 정보(Secrets & Cryptography)
+            4. 의존성(Dependencies)
+            5. 설정 보안(Configuration)
+            6. 비즈니스 로직(Business Logic)
+
+            각 발견 사항에 대해:
+            - 심각도: Critical / High / Medium / Low (CVSS 3.1 기준)
+            - CWE 카테고리 번호 명시
+            - 파일:라인 정확히 명시
+            - 재현 시나리오: 공격자가 어떻게 exploit 할 수 있는지 구체적 설명
+            - 수정 방안: 즉시 적용 가능한 코드 예시 포함
+
+            거짓 양성(false positive)은 배제하고, 실제 악용 가능한 것만 보고하십시오.
+            발견 사항이 없다면 "보안 이슈 없음"이라고 명확히 기술하십시오.
+
+          PR_DESCRIPTION.EXTRA_INSTRUCTIONS: |
+            PR 설명은 한국어로, 보안 관점에서 작성하십시오.
+            이 변경이 공격 표면에 미치는 영향을 명시하십시오.
+        run: |
+          python -m pr_agent.servers.github_action_runner
