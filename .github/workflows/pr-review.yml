@@ -1,0 +1,82 @@
+name: PR Review (CLIProxyAPI)
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  pr_review:
+    if: github.event.pull_request.user.login == 'jclee941'
+    runs-on: ubuntu-latest
+    name: PR review via CLIProxyAPI
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out PR head SHA
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml', 'requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install pr-agent
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e .
+
+      - name: Verify cli_proxy connectivity
+        env:
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+        run: |
+          set -e
+          HTTP_CODE=$(curl -sS -o /tmp/cli_proxy_test.json -w '%{http_code}' \
+            --max-time 15 \
+            https://cliproxy.jclee.me/v1/models \
+            -H "Authorization: Bearer $CLIPROXY_API_KEY")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: cli_proxy returned HTTP $HTTP_CODE"
+            cat /tmp/cli_proxy_test.json
+            exit 1
+          fi
+          MODEL_COUNT=$(python3 -c "import json; print(len(json.load(open('/tmp/cli_proxy_test.json'))['data']))")
+          echo "cli_proxy OK — $MODEL_COUNT models available"
+
+      - name: Run PR review
+        env:
+          OPENAI_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          OPENAI.API_BASE: https://cliproxy.jclee.me/v1
+          CONFIG.MODEL: kimi-k2.6
+          CONFIG.FALLBACK_MODELS: '["kimi-k2.5", "claude-sonnet-4-6"]'
+          CONFIG.RESPONSE_LANGUAGE: ko
+          CONFIG.AI_TIMEOUT: '180'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_REVIEWER.EXTRA_INSTRUCTIONS: |
+            이 리뷰는 표준 코드 리뷰 모드입니다.
+            다음 관점에서 체계적으로 점검하십시오:
+
+            1. **보안**: SQL Injection, XSS, 인증/인가, secrets 노출
+            2. **정확성**: 논리 오류, 경쟁조건, edge case 미처리
+            3. **성능**: 불필요한 쿼리, 메모리 누수, 비효율 알고리즘
+            4. **유지보수성**: 코드 중복, 과도한 복잡성, 테스트 부재
+            5. **문서화**: README.md, API 문서, 주석/독스트링, PR 설명
+
+            각 이슈에 번호를 부여하고, 심각도([CRITICAL] [WARNING] [INFO])와
+            파일명+라인 번호를 명시하십시오. 개선 제안에는 구체적인 코드 예시를 포함하십시오.
+
+          PR_DESCRIPTION.EXTRA_INSTRUCTIONS: |
+            PR 설명은 한국어로 작성하십시오.
+        run: |
+          .venv/bin/python -m pr_agent.servers.github_action_runner

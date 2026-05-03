@@ -1,0 +1,19 @@
+name: Issue Management
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  issues:
+    types: [opened, edited, closed, reopened, labeled, unlabeled, assigned]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  issue-management:
+    if: github.event_name != 'push'
+    uses: jclee941/.github/.github/workflows/reusable-issue-management.yml@master
+    secrets: inherit

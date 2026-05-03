@@ -1,0 +1,174 @@
+name: Reusable Issue Management
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  stale-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stale Issue Detection
+        uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          stale-issue-message: |
+            이 이슈는 30일 이상 활동이 없어 `stale` 상태로 전환됩니다.
+            추가 활동이 없으면 7일 후 자동으로 닫힙니다.
+          close-issue-message: |
+            이슈가 7일 이상 활동이 없어 자동으로 닫혔습니다.
+            필요시 재오픈해주세요.
+          days-before-stale: 30
+          days-before-close: 7
+          stale-issue-label: stale
+          exempt-issue-labels: pinned,security,critical
+          remove-stale-when-updated: true
+
+  auto-label:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Auto-label new issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const title = issue.title.toLowerCase();
+            const body = (issue.body || '').toLowerCase();
+            const combined = title + ' ' + body;
+            
+            const labels = [];
+            
+            // Keyword-based labeling
+            if (combined.includes('bug') || combined.includes('fix') || combined.includes('error') || combined.includes('crash')) {
+              labels.push('bug');
+            }
+            if (combined.includes('feature') || combined.includes('enhance') || combined.includes('add') || combined.includes('support')) {
+              labels.push('enhancement');
+            }
+            if (combined.includes('doc') || combined.includes('readme') || combined.includes('documentation') || combined.includes('wiki')) {
+              labels.push('documentation');
+            }
+            if (combined.includes('security') || combined.includes('vuln') || combined.includes('cve') || combined.includes('exploit')) {
+              labels.push('security');
+            }
+            if (combined.includes('test') || combined.includes('testing') || combined.includes('coverage')) {
+              labels.push('tests');
+            }
+            if (combined.includes('perf') || combined.includes('slow') || combined.includes('memory') || combined.includes('optimize')) {
+              labels.push('performance');
+            }
+            if (combined.includes('refactor') || combined.includes('clean') || combined.includes('debt')) {
+              labels.push('refactor');
+            }
+            if (combined.includes('deps') || combined.includes('dependency') || combined.includes('upgrade') || combined.includes('bump')) {
+              labels.push('dependencies');
+            }
+            
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: labels
+              });
+              console.log(`Added labels: ${labels.join(', ')}`);
+            }
+
+  stale-remove:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issue_comment' || (github.event_name == 'issues' && contains(fromJson('["reopened", "edited"]'), github.event.action))
+    steps:
+      - name: Remove stale label on activity
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue || context.payload.comment?.issue;
+            if (!issue) return;
+            const labels = issue.labels.map(l => l.name);
+            if (labels.includes('stale')) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                name: 'stale'
+              });
+              console.log(`Removed stale label from #${issue.number}`);
+            }
+
+
+  issue-stats:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Generate Issue Statistics
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            
+            const stats = {
+              total: issues.length,
+              bug: issues.filter(i => i.labels.some(l => l.name === 'bug')).length,
+              enhancement: issues.filter(i => i.labels.some(l => l.name === 'enhancement')).length,
+              documentation: issues.filter(i => i.labels.some(l => l.name === 'documentation')).length,
+              security: issues.filter(i => i.labels.some(l => l.name === 'security')).length,
+              stale: issues.filter(i => i.labels.some(l => l.name === 'stale')).length,
+              no_labels: issues.filter(i => i.labels.length === 0).length,
+              old: issues.filter(i => {
+                const days = (Date.now() - new Date(i.created_at)) / (1000 * 60 * 60 * 24);
+                return days > 30;
+              }).length
+            };
+            
+            console.log('📊 Issue Statistics');
+            console.log('====================');
+            console.log(`Total open: ${stats.total}`);
+            console.log(`Bug: ${stats.bug}`);
+            console.log(`Enhancement: ${stats.enhancement}`);
+            console.log(`Documentation: ${stats.documentation}`);
+            console.log(`Security: ${stats.security}`);
+            console.log(`Stale: ${stats.stale}`);
+            console.log(`No labels: ${stats.no_labels}`);
+            console.log(`Over 30 days: ${stats.old}`);
+            
+            // Create summary comment if old issues exist
+            if (stats.old > 0) {
+              const body = `## 📋 이슈 현황 요약\n\n` +
+                `- **총 오픈 이슈**: ${stats.total}\n` +
+                `- **30일 이상 미처리**: ${stats.old}개\n` +
+                `- **라벨 미부착**: ${stats.no_labels}개\n\n` +
+                `> 자동 생성됨 (Issue Management Workflow)`;
+              
+              // Check if summary issue already exists
+              const { data: existing } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: 'issue-summary',
+                state: 'open'
+              });
+              
+              if (existing.length === 0) {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `[BOT] 주간 이슈 현황 (${new Date().toISOString().split('T')[0]})`,
+                  body: body,
+                  labels: ['issue-summary', 'bot']
+                });
+              } else {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existing[0].number,
+                  body: body
+                });
+              }
+            }
