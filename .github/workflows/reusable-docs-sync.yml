@@ -1,0 +1,172 @@
+name: Reusable Documentation Sync
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  link-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check Markdown links
+        uses: lycheeverse/lychee-action@v1
+        with:
+          args: >
+            --exclude-all-private
+            --exclude-mail
+            --timeout 30
+            --retry 3
+            --no-progress
+            README.md
+            docs/
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create issue for broken links
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## 🚨 문서 링크 깨짐 감지\n\n` +
+              `Markdown 파일의 링크 점검 중 깨진 링크가 발견되었습니다.\n\n` +
+              `- Workflow: ${{ github.workflow }}\n` +
+              `- Commit: ${{ github.sha }}\n` +
+              `- Branch: ${{ github.ref }}\n\n` +
+              `> 자동 생성됨 (Documentation Sync Workflow)`;
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[BOT] 문서 링크 깨짐 감지 (${new Date().toISOString().split('T')[0]})`,
+              body: body,
+              labels: ['documentation', 'bot', 'broken-links']
+            });
+
+  markdown-lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install markdownlint
+        run: npm install -g markdownlint-cli
+
+      - name: Lint Markdown files
+        run: |
+          markdownlint '**/*.md' \
+            --ignore node_modules \
+            --ignore .venv \
+            --ignore '**/pr-agent-upstream-README.md'
+
+  readme-sync-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check README sync
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            const changedFiles = files.map(f => f.filename);
+            const hasCodeChanges = changedFiles.some(f => 
+              f.endsWith('.py') || f.endsWith('.js') || f.endsWith('.ts') || 
+              f.endsWith('.go') || f.endsWith('.rs') || f.endsWith('.java')
+            );
+            const hasConfigChanges = changedFiles.some(f =>
+              f.endsWith('.toml') || f.endsWith('.yaml') || f.endsWith('.yml') ||
+              f.endsWith('.json') || f.includes('.env')
+            );
+            const hasReadmeChange = changedFiles.some(f => f.toLowerCase().includes('readme'));
+            const hasDocChange = changedFiles.some(f => 
+              f.startsWith('docs/') || f.endsWith('.md')
+            );
+            
+            const warnings = [];
+            
+            if (hasCodeChanges && !hasReadmeChange && !hasDocChange) {
+              warnings.push('⚠️ 코드 변경이 있지만 README.md나 문서 업데이트가 없습니다. 새 기능/API 변경 시 문서 업데이트를 고려하세요.');
+            }
+            
+            if (hasConfigChanges && !hasReadmeChange) {
+              warnings.push('⚠️ 설정 파일 변경이 있지만 README 업데이트가 없습니다. 설정 예시나 사용법 문서를 업데이트하세요.');
+            }
+            
+            if (warnings.length > 0) {
+              const body = `## 📚 문서 현행화 체크\n\n` +
+                warnings.join('\n\n') + '\n\n' +
+                `> 자동 생성됨 (Documentation Sync Workflow)`;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+  api-docs-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check API documentation
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            const changedFiles = files.map(f => f.filename);
+            
+            // Check for API route changes
+            const hasApiChanges = changedFiles.some(f =>
+              f.includes('route') || f.includes('api') || f.includes('endpoint') ||
+              f.includes('handler') || f.includes('controller')
+            );
+            
+            const hasApiDocs = changedFiles.some(f =>
+              f.includes('openapi') || f.includes('swagger') || 
+              f.includes('api-doc') || (f.startsWith('docs/') && f.includes('api'))
+            );
+            
+            if (hasApiChanges && !hasApiDocs) {
+              const body = `## 🔌 API 문서 체크\n\n` +
+                `⚠️ API 관련 코드 변경이 있지만 API 문서 업데이트가 없습니다.\n\n` +
+                `변경된 파일:\n` +
+                changedFiles.filter(f => f.includes('route') || f.includes('api') || f.includes('endpoint')).map(f => `- \`${f}\``).join('\n') + '\n\n' +
+              `OpenAPI/Swagger 명세나 API 문서를 업데이트했는지 확인하세요.\n\n` +
+                `> 자동 생성됨 (Documentation Sync Workflow)`;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }

@@ -1,0 +1,23 @@
+name: Documentation Sync
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - '**.md'
+      - 'docs/**'
+      - 'README*'
+      - 'CHANGELOG*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  docs-sync:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    uses: jclee941/.github/.github/workflows/reusable-docs-sync.yml@master
+    secrets: inherit

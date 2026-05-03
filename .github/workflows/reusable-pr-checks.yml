@@ -1,0 +1,183 @@
+name: Reusable PR Checks
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  check-size:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: Check PR Size
+    steps:
+      - name: 500 LOC limit check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          PR_NUM=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+          LOC_DATA=$(gh pr view "$PR_NUM" --repo "$REPO" --json additions,deletions -q '.additions + .deletions')
+          echo "PR #$PR_NUM total changed lines: $LOC_DATA"
+          if [ "$LOC_DATA" -gt 500 ]; then
+            gh issue create --repo "$REPO" \
+              --title "[BOT] PR #$PR_NUM exceeds 500 LOC ($LOC_DATA lines)" \
+              --body "## Large PR Detected\n\n- **PR**: #$PR_NUM\n- **Changed Lines**: $LOC_DATA\n- **Threshold**: 500\n\nThis PR exceeds the recommended maximum of 500 changed lines. Consider splitting it into smaller, focused PRs for easier review.\n\n> Automated by jclee-bot"
+          fi
+
+  check-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: Check PR Title
+    steps:
+      - name: Conventional Commits validation
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.pull_request.title;
+            const allowed = /^(feat|fix|hotfix|docs|refactor|test|chore|ci|perf|security|style|build|revert)(\(.+\))?!?: .+/;
+            
+            if (!allowed.test(title)) {
+              const body = `## PR 제목 규칙 위반\n\n현재 제목: \`${title}\`\n\n**Conventional Commits** 형식을 따라주세요:\n\n` +
+                `\`\`\`\nfeat: add new feature\nfix: resolve bug\ndocs: update README\nrefactor: improve structure\ntest: add tests\nchore: update config\nci: fix workflow\nperf: optimize speed\nsecurity: patch vulnerability\n\`\`\`\n\n> Automated by jclee-bot`;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+              core.setFailed(`PR title does not follow Conventional Commits: ${title}`);
+            }
+
+  check-branch:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: Check Branch Name
+    steps:
+      - name: Branch naming validation
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.payload.pull_request.head.ref;
+            const allowed = /^(feat|fix|hotfix|test|docs|refactor|chore|ci|perf|security|style|build|revert)\/.+/;
+            
+            if (!allowed.test(branch)) {
+              const body = `## 브랜치 이름 규칙 위반\n\n현재 브랜치: \`${branch}\`\n\n표준 prefix를 사용하세요:\n\n` +
+                `- \`feat/\` - 새 기능\n- \`fix/\` - 버그 수정\n- \`hotfix/\` - 긴급 수정\n- \`test/\` - 테스트\n- \`docs/\` - 문서\n- \`refactor/\` - 리팩토링\n- \`chore/\` - 잡무\n- \`ci/\` - CI/CD\n- \`perf/\` - 성능\n- \`security/\` - 보안\n- \`style/\` - 스타일\n- \`build/\` - 빌드\n- \`revert/\` - 롤백\n\n> Automated by jclee-bot`
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+              core.setFailed(`Branch name does not follow naming convention: ${branch}`);
+            }
+
+  check-description:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: Check PR Description
+    steps:
+      - name: Description validation
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            
+            if (body.length < 10) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## PR 설명 부족\n\n설명이 너무 짧습니다 (최소 10자). 변경 내용을 자세히 적어주세요.\n\n> Automated by jclee-bot`
+              });
+            }
+            
+            const hasChanges = body.toLowerCase().includes('changes') || 
+                              body.toLowerCase().includes('변경') ||
+                              body.toLowerCase().includes('##');
+            
+            if (!hasChanges) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## PR 설명 개선 필요\n\n변경 사항(Changes/변경사항) 섹션을 추가해주세요.\n\n> Automated by jclee-bot`
+              });
+            }
+
+  check-large-files:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: Check Large Files
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect large file changes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            const largeFiles = files.filter(f => f.changes > 1000);
+            
+            if (largeFiles.length > 0) {
+              const body = `## 대용량 파일 변경 경고\n\n` +
+                `다음 파일이 1000줄 이상 변경되었습니다. 리뷰가 어려울 수 있습니다:\n\n` +
+                largeFiles.map(f => `- \`${f.filename}\`: ${f.changes}줄 변경`).join('\n') +
+                `\n\n> Automated by jclee-bot`;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+  check-sensitive-files:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: Check Sensitive Files
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect sensitive file changes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            const sensitivePatterns = ['.env', '.key', '.pem', '.p12', '.pfx', 'secrets', 'credentials', 'password'];
+            const sensitiveFiles = files.filter(f => 
+              sensitivePatterns.some(p => f.filename.toLowerCase().includes(p))
+            );
+            
+            if (sensitiveFiles.length > 0) {
+              const body = `## 민감 파일 변경 감지\n\n` +
+                `⚠️ **보안 주의**: 다음 민감 파일이 변경되었습니다:\n\n` +
+                sensitiveFiles.map(f => `- \`${f.filename}\``).join('\n') +
+                `\n\n민감 정보가 노출되지 않았는지 반드시 확인하세요.\n\n> Automated by jclee-bot`;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
