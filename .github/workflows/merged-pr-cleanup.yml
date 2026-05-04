@@ -1,0 +1,142 @@
+name: Merged PR Cleanup
+
+# When a PR is merged:
+#   - close any linked issues (Closes/Fixes/Resolves keyword OR
+#     branch-name issue-N pattern)
+#   - delete the source branch (unless it's master/main/release/*)
+# Best-effort: missing branch / closed issue → warning, not failure.
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number
+        required: true
+        type: string
+      dry_run:
+        description: Skip actual deletes/closes
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: merged-pr-cleanup-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.action == 'closed' && github.event.pull_request.merged == true)
+    steps:
+      - name: Gather PR data
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -eu
+          DATA=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json number,headRefName,headRepository,baseRefName,body,state,title)
+          STATE=$(echo "$DATA" | jq -r '.state')
+          if [ "$STATE" != "MERGED" ]; then
+            echo "::notice::PR #$PR_NUMBER is $STATE; skipping cleanup."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          HEAD_REF=$(echo "$DATA" | jq -r '.headRefName')
+          HEAD_REPO=$(echo "$DATA" | jq -r '.headRepository.name // empty')
+          BASE_REF=$(echo "$DATA" | jq -r '.baseRefName')
+          BODY=$(echo "$DATA" | jq -r '.body // ""')
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "head_ref=$HEAD_REF"
+            echo "head_repo=$HEAD_REPO"
+            echo "base_ref=$BASE_REF"
+          } >> "$GITHUB_OUTPUT"
+          # Persist body to a file (multi-line, safer than $GITHUB_OUTPUT).
+          printf '%s' "$BODY" > /tmp/pr_body.txt
+
+      - name: Close linked issues
+        if: steps.pr.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          # 1) Keywords in body — GitHub already auto-closes these on the
+          #    *origin* repo when the PR merges to default branch, but we
+          #    do an explicit pass to handle non-default-base merges.
+          ISSUES=$(grep -oiE '(closes|close|closed|fixes|fix|fixed|resolves|resolve|resolved)[[:space:]]+#[0-9]+' /tmp/pr_body.txt 2>/dev/null \
+            | grep -oE '#[0-9]+' | tr -d '#' | sort -u || true)
+          # 2) Branch-name fallback: type/issue-N-slug
+          BRANCH_ISSUE=$(echo "$HEAD_REF" | sed -nE 's|^[^/]+/issue-([0-9]+)-.*|\1|p')
+          if [ -n "$BRANCH_ISSUE" ]; then
+            ISSUES="$ISSUES $BRANCH_ISSUE"
+          fi
+          ISSUES=$(echo "$ISSUES" | tr ' ' '\n' | sort -u | grep -v '^$' || true)
+          if [ -z "$ISSUES" ]; then
+            echo "::notice::No linked issues found for PR #$PR_NUMBER"
+            exit 0
+          fi
+          for I in $ISSUES; do
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::notice::DRY-RUN: would close issue #$I"
+              continue
+            fi
+            CURRENT_STATE=$(gh issue view "$I" --repo "$GITHUB_REPOSITORY" --json state -q .state 2>/dev/null || echo MISSING)
+            if [ "$CURRENT_STATE" = "OPEN" ]; then
+              gh issue close "$I" --repo "$GITHUB_REPOSITORY" \
+                --comment "Closed automatically by merged PR #$PR_NUMBER (branch \`$HEAD_REF\`)." \
+                --reason completed \
+                || echo "::warning::failed to close issue #$I; continuing"
+            else
+              echo "::notice::Issue #$I state=$CURRENT_STATE; not changing."
+            fi
+          done
+
+      - name: Delete source branch
+        if: steps.pr.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+          HEAD_REPO: ${{ steps.pr.outputs.head_repo }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          # Skip protected branches.
+          case "$HEAD_REF" in
+            master|main|develop|release|release/*)
+              echo "::notice::Refusing to delete protected branch: $HEAD_REF"
+              exit 0 ;;
+          esac
+          # Skip fork branches (head repo != base repo).
+          if [ -n "$HEAD_REPO" ] && [ "$HEAD_REPO" != "${GITHUB_REPOSITORY##*/}" ]; then
+            echo "::notice::Branch lives on fork ($HEAD_REPO); skipping delete."
+            exit 0
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::DRY-RUN: would delete branch $HEAD_REF"
+            exit 0
+          fi
+          # GitHub may have already auto-deleted on merge — treat 404 as success.
+          if gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$HEAD_REF" 2>/tmp/del_err; then
+            echo "Deleted $HEAD_REF"
+          else
+            if grep -q "Reference does not exist" /tmp/del_err 2>/dev/null; then
+              echo "::notice::Branch $HEAD_REF already deleted by GitHub"
+            else
+              echo "::warning::failed to delete branch $HEAD_REF: $(cat /tmp/del_err)"
+            fi
+          fi

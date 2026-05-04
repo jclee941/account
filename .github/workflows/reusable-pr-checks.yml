@@ -13,15 +13,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
+          set -u
           PR_NUM=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
-          LOC_DATA=$(gh pr view "$PR_NUM" --repo "$REPO" --json additions,deletions -q '.additions + .deletions')
-          echo "PR #$PR_NUM total changed lines: $LOC_DATA"
+          AUTHOR=${{ github.event.pull_request.user.login }}
+          # Bots (dependabot, renovate) regularly produce large diffs from
+          # bumping vendored deps. Their oversized-PR issues are noise and
+          # the gh pr view call below has been hitting rate limits on
+          # bot-flooded repos. Skip the size check entirely for bots.
+          if [[ "$AUTHOR" == *"[bot]" ]]; then
+            echo "::notice::Skipping size check for bot author=$AUTHOR"
+            exit 0
+          fi
+          LOC_DATA=$(gh pr view "$PR_NUM" --repo "$REPO" --json additions,deletions -q '.additions + .deletions') \
+            || { echo "::warning::gh pr view failed (likely rate limit); skipping size check"; exit 0; }
+          echo "PR #$PR_NUM (author=$AUTHOR) total changed lines: $LOC_DATA"
           if [ "$LOC_DATA" -gt 500 ]; then
             gh issue create --repo "$REPO" \
               --title "[BOT] PR #$PR_NUM exceeds 500 LOC ($LOC_DATA lines)" \
-              --body "## Large PR Detected\n\n- **PR**: #$PR_NUM\n- **Changed Lines**: $LOC_DATA\n- **Threshold**: 500\n\nThis PR exceeds the recommended maximum of 500 changed lines. Consider splitting it into smaller, focused PRs for easier review.\n\n> Automated by jclee-bot"
+              --body "## Large PR Detected\n\n- **PR**: #$PR_NUM\n- **Changed Lines**: $LOC_DATA\n- **Threshold**: 500\n\nThis PR exceeds the recommended maximum of 500 changed lines. Consider splitting it into smaller, focused PRs for easier review.\n\n> Automated by jclee-bot" \
+              || echo "::warning::Failed to create oversized-PR issue (rate limit or permissions); continuing"
           fi
 
   check-title:
@@ -84,27 +95,36 @@ jobs:
         with:
           script: |
             const body = context.payload.pull_request.body || '';
-            
-            if (body.length < 10) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: `## PR 설명 부족\n\n설명이 너무 짧습니다 (최소 10자). 변경 내용을 자세히 적어주세요.\n\n> Automated by jclee-bot`
-              });
+            const author = (context.payload.pull_request.user || {}).login || '';
+            // Bots (dependabot, renovate) generate complete release-notes-style
+            // bodies that should not trigger description-quality nags.
+            if (author.endsWith('[bot]')) {
+              core.info(`Skipping description check for bot author: ${author}`);
+              return;
             }
-            
-            const hasChanges = body.toLowerCase().includes('changes') || 
-                              body.toLowerCase().includes('변경') ||
+            const tryComment = async (commentBody) => {
+              try {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: commentBody,
+                });
+              } catch (e) {
+                // Resource-not-accessible-by-integration on forks / dependabot PRs
+                // is expected; degrade to a warning so the check stays green.
+                core.warning(`Could not post description-validation comment: ${e.message}`);
+              }
+            };
+
+            if (body.length < 10) {
+              await tryComment('## PR \uc124\uba85 \ubd80\uc871\n\n\uc124\uba85\uc774 \ub108\ubb34 \uc9e7\uc2b5\ub2c8\ub2e4 (\ucd5c\uc18c 10\uc790). \ubcc0\uacbd \ub0b4\uc6a9\uc744 \uc790\uc138\ud788 \uc801\uc5b4\uc8fc\uc138\uc694.\n\n> Automated by jclee-bot');
+            }
+            const hasChanges = body.toLowerCase().includes('changes') ||
+                              body.toLowerCase().includes('\ubcc0\uacbd') ||
                               body.toLowerCase().includes('##');
-            
             if (!hasChanges) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: `## PR 설명 개선 필요\n\n변경 사항(Changes/변경사항) 섹션을 추가해주세요.\n\n> Automated by jclee-bot`
-              });
+              await tryComment('## PR \uc124\uba85 \uac1c\uc120 \ud544\uc694\n\n\ubcc0\uacbd \uc0ac\ud56d(Changes/\ubcc0\uacbd\uc0ac\ud56d) \uc139\uc158\uc744 \ucd94\uac00\ud574\uc8fc\uc138\uc694.\n\n> Automated by jclee-bot');
             }
 
   check-large-files:

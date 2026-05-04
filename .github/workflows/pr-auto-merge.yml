@@ -1,0 +1,119 @@
+name: PR Auto-Merge (human-authored)
+
+# Enables auto-merge (squash) on a PR when:
+#   - the author is human (NOT *[bot] — dependabot has its own workflow)
+#   - the PR is not draft
+#   - mergeStateStatus eventually reaches CLEAN
+#   - all required checks pass (handled by branch protection, not us)
+#
+# We never use --admin and never bypass branch protection.
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number
+        required: true
+        type: string
+      dry_run:
+        description: Skip the actual auto-merge enable
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-auto-merge-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  enable-auto-merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Trigger on either:
+    #   1. an APPROVED review on a non-draft, non-bot PR
+    #   2. an explicit `auto-merge` label being added
+    #   3. manual dispatch
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_review' &&
+       github.event.review.state == 'approved' &&
+       github.event.pull_request.draft == false &&
+       !endsWith(github.event.pull_request.user.login, '[bot]')) ||
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'labeled' &&
+       github.event.label.name == 'auto-merge' &&
+       github.event.pull_request.draft == false)
+    steps:
+      - name: Determine PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -eu
+          DATA=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json number,state,isDraft,mergeStateStatus,author,url,reviews,reviewDecision,statusCheckRollup)
+          STATE=$(echo "$DATA" | jq -r '.state')
+          IS_DRAFT=$(echo "$DATA" | jq -r '.isDraft')
+          AUTHOR=$(echo "$DATA" | jq -r '.author.login')
+          REVIEW_DECISION=$(echo "$DATA" | jq -r '.reviewDecision // "NONE"')
+          URL=$(echo "$DATA" | jq -r '.url')
+          {
+            echo "number=$PR_NUMBER"
+            echo "state=$STATE"
+            echo "is_draft=$IS_DRAFT"
+            echo "author=$AUTHOR"
+            echo "review_decision=$REVIEW_DECISION"
+            echo "url=$URL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Guardrails
+        env:
+          STATE: ${{ steps.pr.outputs.state }}
+          IS_DRAFT: ${{ steps.pr.outputs.is_draft }}
+          AUTHOR: ${{ steps.pr.outputs.author }}
+          REVIEW_DECISION: ${{ steps.pr.outputs.review_decision }}
+        run: |
+          set -eu
+          if [ "$STATE" != "OPEN" ]; then
+            echo "::notice::PR is $STATE; skipping."
+            echo "skip=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "::notice::PR is draft; skipping."
+            echo "skip=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          case "$AUTHOR" in
+            *\[bot\]) echo "::notice::PR by bot $AUTHOR — handled elsewhere; skipping."; echo "skip=true" >> "$GITHUB_ENV"; exit 0 ;;
+          esac
+          # Either an APPROVED review must exist, or the user explicitly
+          # labeled the PR with `auto-merge`. The `if:` guard already
+          # filters by event, so reaching this step is enough.
+          echo "Guardrails passed for PR $AUTHOR (decision=$REVIEW_DECISION)"
+
+      - name: Enable auto-merge
+        if: env.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::DRY-RUN: would call gh pr merge --auto --squash $PR_URL"
+            exit 0
+          fi
+          # GitHub auto-merge only fires once all required status checks pass
+          # and the merge box is green. We just enable it; we never bypass.
+          gh pr merge --auto --squash "$PR_URL" \
+            || echo "::warning::auto-merge enable failed (allow_auto_merge disabled, branch protection mismatch, or PR already merged); not retrying"

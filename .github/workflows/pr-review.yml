@@ -137,13 +137,68 @@ jobs:
           print("preflight ok: github.user_token configured")
           PY
 
-          # Run the review and capture both pr-agent's exit code and its log output.
-          # pr-agent's CLI exits 0 even on fatal provider errors (silent-success), so we
-          # additionally grep the captured log for known fatal patterns and fail the job.
-          set +e
-          .venv/bin/python -m pr_agent.cli --pr_url "$PR_URL" review 2>&1 | tee /tmp/pr-agent.log
-          status=${PIPESTATUS[0]}
-          set -e
+          # Dynamic command selection based on PR characteristics.
+          # Decision order (first match wins):
+          #   1. Dependabot/bot author     -> review
+          #   2. Docs-only diff            -> describe
+          #   3. feat:/fix:/refactor: title-> describe review improve agentic_review
+          #   4. < 50 LOC                  -> review
+          #   5. > 1000 LOC                -> describe review
+          #   6. default                   -> describe review improve agentic_review
+          PR_NUM=${{ github.event.pull_request.number }}
+          PR_DATA=$(gh pr view "$PR_NUM" --repo "$GITHUB_REPOSITORY" \
+            --json additions,deletions,files,title,author 2>/dev/null || echo '{}')
+          ADDS=$(echo "$PR_DATA" | jq -r '.additions // 0')
+          DELS=$(echo "$PR_DATA" | jq -r '.deletions // 0')
+          LOC=$((ADDS + DELS))
+          AUTHOR=$(echo "$PR_DATA" | jq -r '.author.login // ""')
+          TITLE=$(echo "$PR_DATA" | jq -r '.title // ""')
+          # Treat the diff as docs-only when EVERY changed file matches the docs allowlist.
+          NON_DOCS=$(echo "$PR_DATA" | jq -r '.files[]?.path // empty' \
+            | grep -vE '\.(md|rst|txt|adoc)$|^docs/|^README|^LICENSE|^NOTICE|^CONTRIBUTING|^\.github/(ISSUE|PULL_REQUEST)' || true)
+          DOCS_ONLY=false
+          if [ -n "$(echo "$PR_DATA" | jq -r '.files[]?.path' 2>/dev/null)" ] && [ -z "$NON_DOCS" ]; then
+            DOCS_ONLY=true
+          fi
+          if echo "$AUTHOR" | grep -qE '\[bot\]$'; then
+            CMDS="review"
+            REASON="bot author"
+          elif [ "$DOCS_ONLY" = "true" ]; then
+            CMDS="describe"
+            REASON="docs-only diff"
+          elif echo "$TITLE" | grep -qE '^(feat|fix|refactor)(\([a-z0-9_/-]+\))?!?:'; then
+            CMDS="describe review improve agentic_review"
+            REASON="feat/fix/refactor PR"
+          elif [ "$LOC" -lt 50 ]; then
+            CMDS="review"
+            REASON="small PR (<50 LOC)"
+          elif [ "$LOC" -gt 1000 ]; then
+            CMDS="describe review"
+            REASON="large PR (>1000 LOC)"
+          else
+            CMDS="describe review improve agentic_review"
+            REASON="default"
+          fi
+          echo "::notice::PR #$PR_NUM (LOC=$LOC, author=$AUTHOR, title=$TITLE)"
+          echo "::notice::Selected commands: $CMDS  ($REASON)"
+
+          # Run the selected commands and capture pr-agent's combined output.
+          # pr-agent's CLI exits 0 even on fatal provider errors (silent-success),
+          # so we additionally grep the captured log for known fatal patterns.
+          : > /tmp/pr-agent.log
+          status=0
+          for cmd in $CMDS; do
+            echo "--- running pr-agent $cmd ---" | tee -a /tmp/pr-agent.log
+            set +e
+            .venv/bin/python -m pr_agent.cli --pr_url "$PR_URL" "$cmd" 2>&1 | tee -a /tmp/pr-agent.log
+            cmd_status=${PIPESTATUS[0]}
+            set -e
+            if [ "$cmd_status" -ne 0 ]; then
+              status=$cmd_status
+              echo "::error::pr-agent $cmd exited with status $cmd_status"
+              break
+            fi
+          done
 
           if [ "$status" -ne 0 ]; then
             echo "::error::pr-agent CLI exited with status $status"

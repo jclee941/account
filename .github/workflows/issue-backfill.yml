@@ -1,0 +1,146 @@
+name: Issue Backfill
+
+# Picks up pre-existing open issues that were created BEFORE the
+# git-flow automation was deployed and would otherwise never get a
+# branch. For each candidate it adds the `in-progress` label, which
+# triggers issue-to-branch.yml in the normal way.
+#
+# Selection rules (every condition must hold):
+#   - state: open
+#   - no associated PR (closed or open) referencing this issue
+#   - none of the skip labels: wontfix, duplicate, invalid, bot-review,
+#     ci-failure, automated, dependencies
+#   - none of the trigger labels: in-progress (already triggered)
+#   - last-update age >= min_age_days
+#
+# Defaults to dry-run; only the explicit `dry_run=false` dispatch
+# actually mutates labels.
+
+on:
+  schedule:
+    # Daily 09:00 UTC (18:00 KST). Manual dispatch is the primary path.
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: If true, only report candidates; do not add labels
+        required: false
+        type: boolean
+        default: true
+      min_age_days:
+        description: Pick only issues last updated this many days ago
+        required: false
+        default: "5"
+      max_picks:
+        description: Cap on how many issues to label per run (per repo)
+        required: false
+        default: "3"
+      label:
+        description: Label to add (default in-progress = triggers issue-to-branch.yml)
+        required: false
+        default: in-progress
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: issue-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Pick and label candidates
+        env:
+          # Use a fine-grained PAT (secrets.GH_PAT) when available so the
+          # subsequent `labeled` event re-fires downstream workflows like
+          # issue-to-branch.yml. With the default GITHUB_TOKEN the event
+          # is suppressed to prevent recursive cascades, which here means
+          # the backfill silently completes without triggering branch
+          # creation.
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run == false && 'false' || 'true' }}
+          MIN_AGE_DAYS: ${{ inputs.min_age_days || '5' }}
+          MAX_PICKS: ${{ inputs.max_picks || '3' }}
+          LABEL: ${{ inputs.label || 'in-progress' }}
+        run: |
+          set -eu
+          REPO=$GITHUB_REPOSITORY
+          NOW=$(date -u +%s)
+          THRESHOLD=$((NOW - MIN_AGE_DAYS * 86400))
+          SKIP_LABELS="wontfix duplicate invalid bot-review ci-failure automated dependencies"
+          # Pre-fetch open issues; up to 100 per page is fine for our repos.
+          gh issue list --repo "$REPO" --state open --limit 100 \
+            --json number,title,updatedAt,labels,assignees \
+            > /tmp/issues.json
+          PICKED=0
+          {
+            echo "## Issue Backfill Candidates ($REPO)"
+            echo
+            echo "| # | Title | Age | Action |"
+            echo "|---|-------|-----|--------|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for n in $(jq -r '.[].number' /tmp/issues.json); do
+            ISSUE=$(jq -c --arg n "$n" '.[] | select(.number == ($n | tonumber))' /tmp/issues.json)
+            UPDATED=$(echo "$ISSUE" | jq -r '.updatedAt')
+            UPDATED_TS=$(date -u -d "$UPDATED" +%s)
+            AGE_DAYS=$(((NOW - UPDATED_TS) / 86400))
+            TITLE=$(echo "$ISSUE" | jq -r '.title' | tr '|' '/' | head -c 60)
+            # Filter rules.
+            if [ "$UPDATED_TS" -gt "$THRESHOLD" ]; then
+              echo "| #$n | $TITLE | ${AGE_DAYS}d | skip: too fresh |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            LABEL_NAMES=$(echo "$ISSUE" | jq -r '.labels[].name' | tr '\n' ' ')
+            SKIP=0
+            for sl in $SKIP_LABELS; do
+              case " $LABEL_NAMES " in
+                *" $sl "*) SKIP=1; break ;;
+              esac
+            done
+            if [ "$SKIP" = "1" ]; then
+              echo "| #$n | $TITLE | ${AGE_DAYS}d | skip: has skip-label |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            case " $LABEL_NAMES " in
+              *" $LABEL "*)
+                echo "| #$n | $TITLE | ${AGE_DAYS}d | skip: already labeled |" >> "$GITHUB_STEP_SUMMARY"
+                continue
+                ;;
+            esac
+            # Skip if a PR already references this issue. gh issue list's
+            # JSON view does not expose closedByPullRequestsReferences, so
+            # query the timeline events for cross-referenced PRs instead.
+            HAS_PR=$(gh api "repos/$REPO/issues/$n/timeline" --paginate \
+                       --jq '[.[] | select(.event == "cross-referenced" and .source.type == "issue" and .source.issue.pull_request != null)] | length' \
+                       2>/dev/null || echo 0)
+            if [ "${HAS_PR:-0}" != "0" ]; then
+              echo "| #$n | $TITLE | ${AGE_DAYS}d | skip: PR linked |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            # Cap.
+            if [ "$PICKED" -ge "$MAX_PICKS" ]; then
+              echo "| #$n | $TITLE | ${AGE_DAYS}d | skip: max picks reached |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "| #$n | $TITLE | ${AGE_DAYS}d | DRY-RUN would label |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              if gh issue edit "$n" --repo "$REPO" --add-label "$LABEL" >/dev/null 2>&1; then
+                echo "| #$n | $TITLE | ${AGE_DAYS}d | labeled :white_check_mark: |" >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "| #$n | $TITLE | ${AGE_DAYS}d | label-add failed :x: |" >> "$GITHUB_STEP_SUMMARY"
+                continue
+              fi
+            fi
+            PICKED=$((PICKED + 1))
+          done
+          {
+            echo
+            echo "Picked: $PICKED (max $MAX_PICKS)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Picked $PICKED candidates."

@@ -1,0 +1,156 @@
+name: CI Failure Issues
+
+# When Sanity or Auto Deploy Workflows fails on master, create a
+# deduplicated issue. If an open issue already exists for the same
+# (workflow, sha) pair, append a comment instead of creating a duplicate.
+#
+# Replaces the duplicate-prone direct `gh issue create` step in
+# auto-deploy.yml that produced issues #18 and #29.
+
+on:
+  workflow_run:
+    workflows: ["Sanity", "Auto Deploy Workflows"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      workflow_name:
+        description: Workflow name
+        required: true
+        type: string
+      head_sha:
+        description: Commit SHA
+        required: true
+        type: string
+      run_id:
+        description: Run ID (0 for synthetic)
+        required: true
+        type: string
+      conclusion:
+        description: Conclusion (failure or success)
+        required: true
+        type: string
+        default: failure
+      dry_run:
+        description: Skip actual issue ops
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  group: ci-failure-issues-${{ github.event.workflow_run.head_sha || inputs.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Trigger only on FAILURE conclusion (success → close stale below).
+    # workflow_run only fires on default branch by default, which is what we want.
+    steps:
+      - name: Compute event
+        id: ev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            WF_NAME="${{ inputs.workflow_name }}"
+            HEAD_SHA="${{ inputs.head_sha }}"
+            RUN_ID="${{ inputs.run_id }}"
+            CONCLUSION="${{ inputs.conclusion }}"
+          else
+            WF_NAME='${{ github.event.workflow_run.name }}'
+            HEAD_SHA='${{ github.event.workflow_run.head_sha }}'
+            RUN_ID='${{ github.event.workflow_run.id }}'
+            CONCLUSION='${{ github.event.workflow_run.conclusion }}'
+          fi
+          {
+            echo "wf_name=$WF_NAME"
+            echo "head_sha=$HEAD_SHA"
+            echo "run_id=$RUN_ID"
+            echo "conclusion=$CONCLUSION"
+            echo "short_sha=${HEAD_SHA:0:8}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: On success, close any open ci-failure issue for this workflow
+        if: steps.ev.outputs.conclusion == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WF_NAME: ${{ steps.ev.outputs.wf_name }}
+          HEAD_SHA: ${{ steps.ev.outputs.head_sha }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          # The title pattern is stable so we can dedupe and recover.
+          TITLE_PREFIX="[ci] $WF_NAME failed at"
+          OPEN_ISSUES=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --state open --label ci-failure --search "in:title \"$TITLE_PREFIX\"" \
+            --json number,title --jq '.[] | .number' 2>/dev/null || true)
+          if [ -z "$OPEN_ISSUES" ]; then
+            echo "::notice::No open ci-failure issue to close for $WF_NAME"
+            exit 0
+          fi
+          for N in $OPEN_ISSUES; do
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::notice::DRY-RUN: would close stale ci-failure issue #$N"
+              continue
+            fi
+            gh issue close "$N" --repo "$GITHUB_REPOSITORY" \
+              --comment "Resolved by a successful $WF_NAME run on $HEAD_SHA. Auto-closed by jclee-bot." \
+              --reason completed \
+              || echo "::warning::failed to close #$N; continuing"
+          done
+
+      - name: Ensure label exists
+        if: steps.ev.outputs.conclusion == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create ci-failure --color B60205 --description "Auto-managed by ci-failure-issues.yml" 2>/dev/null || true
+          gh label create automated --color BFD4F2 --description "Auto-managed by jclee-bot" 2>/dev/null || true
+
+      - name: Find or create issue for failure
+        if: steps.ev.outputs.conclusion == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WF_NAME: ${{ steps.ev.outputs.wf_name }}
+          HEAD_SHA: ${{ steps.ev.outputs.head_sha }}
+          SHORT_SHA: ${{ steps.ev.outputs.short_sha }}
+          RUN_ID: ${{ steps.ev.outputs.run_id }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          TITLE="[ci] $WF_NAME failed at $SHORT_SHA"
+          # Idempotency: search for an open issue with the SAME title.
+          # Compare exact title rather than substring to avoid false matches.
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --state open --label ci-failure \
+            --json number,title \
+            --jq ".[] | select(.title == \"$TITLE\") | .number" 2>/dev/null | head -1 || true)
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+          BODY="## CI Failure"$'\n\n'"- **Workflow:** $WF_NAME"$'\n'"- **Commit:** $HEAD_SHA"$'\n'"- **Run:** $RUN_URL"$'\n\n'"### Action Required"$'\n'"Inspect the failed run and either fix the underlying problem or close this issue if the failure was transient."$'\n\n'"> Auto-managed by jclee-bot (ci-failure-issues.yml)"
+          if [ -n "$EXISTING" ]; then
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::notice::DRY-RUN: would comment on existing issue #$EXISTING"
+              exit 0
+            fi
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" \
+              --body "Another failure for the same workflow+sha. Run: $RUN_URL" \
+              || echo "::warning::failed to add dedup comment; continuing"
+            echo "::notice::Recorded duplicate failure on existing issue #$EXISTING"
+          else
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::notice::DRY-RUN: would create new issue: $TITLE"
+              exit 0
+            fi
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --label ci-failure,automated \
+              || echo "::warning::failed to create ci-failure issue; non-fatal"
+          fi

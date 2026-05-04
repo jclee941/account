@@ -1,0 +1,128 @@
+name: Issue to Branch
+
+# When an issue gets the `in-progress` label or is assigned, create a
+# branch named <type>/issue-<N>-<slug-of-title> from the default branch.
+# Type derived from issue labels (bug→fix, enhancement→feat, etc.).
+# Idempotent: skip if branch already exists.
+
+on:
+  issues:
+    types: [labeled, assigned]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to create branch for
+        required: true
+        type: string
+      dry_run:
+        description: Skip actual branch creation
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: issue-to-branch-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Trigger only when the label is `in-progress` OR the issue gets assigned to a human (not the bot itself).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'in-progress') ||
+      (github.event.action == 'assigned' && github.event.assignee.login != 'jclee-bot')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute branch metadata
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: |
+          set -eu
+          DATA=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,labels,state)
+          STATE=$(echo "$DATA" | jq -r '.state')
+          if [ "$STATE" != "OPEN" ]; then
+            echo "::warning::Issue #$ISSUE_NUMBER is $STATE; skipping branch creation."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TITLE=$(echo "$DATA" | jq -r '.title')
+          LABELS=$(echo "$DATA" | jq -r '.labels[].name' | tr '\n' ' ')
+          # Derive branch type from labels in priority order.
+          TYPE="chore"
+          for label in $LABELS; do
+            case "$label" in
+              bug|fix) TYPE="fix"; break ;;
+              enhancement|feature|feat) TYPE="feat"; break ;;
+              docs|documentation) TYPE="docs"; break ;;
+              security) TYPE="security"; break ;;
+              performance|perf) TYPE="perf"; break ;;
+              refactor) TYPE="refactor"; break ;;
+              tests|test) TYPE="test"; break ;;
+              dependencies) TYPE="chore"; break ;;
+            esac
+          done
+          # Slugify title: lowercase, replace non-alphanum with -, collapse, trim, max 40 chars.
+          SLUG=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+            | cut -c1-40 \
+            | sed 's/-$//')
+          # Empty-slug fallback for emoji-only or non-Latin titles.
+          if [ -z "$SLUG" ]; then SLUG="untitled"; fi
+          BRANCH="${TYPE}/issue-${ISSUE_NUMBER}-${SLUG}"
+          {
+            echo "branch=$BRANCH"
+            echo "type=$TYPE"
+            echo "issue_number=$ISSUE_NUMBER"
+            echo "title=$TITLE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Computed branch: $BRANCH"
+
+      - name: Create branch
+        if: steps.meta.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          # Idempotency: skip if branch already exists.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "::notice::Branch $BRANCH already exists; nothing to do."
+            exit 0
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::DRY-RUN: would create $BRANCH from $DEFAULT_BRANCH"
+            exit 0
+          fi
+          DEFAULT_SHA=$(git rev-parse "origin/$DEFAULT_BRANCH")
+          gh api -X POST \
+            "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/heads/$BRANCH" \
+            -f "sha=$DEFAULT_SHA" \
+            || { echo "::warning::branch creation API call failed"; exit 0; }
+          echo "Created $BRANCH at $DEFAULT_SHA"
+
+      - name: Comment on issue
+        if: steps.meta.outputs.skip != 'true' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.meta.outputs.issue_number }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Branch \`$BRANCH\` created. Push commits to that branch and a draft PR will open automatically." \
+            || echo "::warning::comment failed; non-fatal"

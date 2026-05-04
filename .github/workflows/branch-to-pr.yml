@@ -1,0 +1,133 @@
+name: Branch to Draft PR
+
+# When a feat/* fix/* hotfix/* docs/* refactor/* perf/* test/* chore/*
+# ci/* security/* build/* style/* revert/* branch is pushed and no
+# open PR exists targeting the default branch, open a draft PR.
+# Skip if author is jclee-bot itself (avoids recursion).
+
+on:
+  push:
+    branches:
+      - 'feat/**'
+      - 'fix/**'
+      - 'hotfix/**'
+      - 'docs/**'
+      - 'refactor/**'
+      - 'perf/**'
+      - 'test/**'
+      - 'chore/**'
+      - 'ci/**'
+      - 'security/**'
+      - 'build/**'
+      - 'style/**'
+      - 'revert/**'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Source branch
+        required: true
+        type: string
+      base:
+        description: Base branch
+        required: false
+        type: string
+        default: master
+      dry_run:
+        description: Skip PR creation
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: branch-to-pr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  open-draft-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Skip pushes from jclee-bot itself or from automated branch creation.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pusher.name != 'jclee-bot' &&
+       github.event.pusher.name != 'github-actions[bot]')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute PR metadata
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BRANCH="${{ inputs.branch }}"
+            BASE="${{ inputs.base }}"
+          else
+            BRANCH="${GITHUB_REF#refs/heads/}"
+            BASE="${{ github.event.repository.default_branch }}"
+          fi
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          # Idempotency: skip if a PR already exists.
+          EXISTING=$(gh pr list --repo "$GITHUB_REPOSITORY" \
+            --head "$BRANCH" --base "$BASE" \
+            --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "::notice::PR #$EXISTING already exists for $BRANCH -> $BASE"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Extract issue number from branch (pattern: <type>/issue-N-slug).
+          ISSUE_NUM=$(echo "$BRANCH" | sed -nE 's|^[^/]+/issue-([0-9]+)-.*|\1|p')
+          echo "issue_number=$ISSUE_NUM" >> "$GITHUB_OUTPUT"
+          # Last commit summary as default title.
+          LAST_COMMIT=$(git log -1 --pretty=format:%s "origin/$BRANCH" 2>/dev/null || git log -1 --pretty=format:%s)
+          echo "title=$LAST_COMMIT" >> "$GITHUB_OUTPUT"
+
+      - name: Open draft PR
+        if: steps.meta.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+          BASE: ${{ steps.meta.outputs.base }}
+          ISSUE_NUM: ${{ steps.meta.outputs.issue_number }}
+          TITLE: ${{ steps.meta.outputs.title }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          # Build PR body.
+          BODY="## 변경사항"$'\n\n'"<!-- 자동으로 생성된 draft PR입니다. 마크다운으로 변경 내용을 설명해주세요. -->"$'\n\n'
+          if [ -n "$ISSUE_NUM" ]; then
+            BODY="${BODY}Closes #${ISSUE_NUM}"$'\n\n'
+          fi
+          # Append commit log range vs base branch.
+          BODY="${BODY}### 커밋 목록"$'\n'
+          # shellcheck disable=SC2129
+          {
+            git log --pretty=format:'- %s (%h)' "origin/${BASE}..origin/${BRANCH}" 2>/dev/null \
+              || git log --pretty=format:'- %s (%h)' -n 10 "origin/${BRANCH}"
+          } > /tmp/commits.txt || true
+          BODY="${BODY}$(cat /tmp/commits.txt)"
+          BODY="${BODY}"$'\n\n'"> Automated by jclee-bot (branch-to-pr.yml)"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::DRY-RUN: would open draft PR $BRANCH -> $BASE"
+            echo "title: $TITLE"
+            echo "body: $BODY"
+            exit 0
+          fi
+          # Create the draft PR.
+          gh pr create --repo "$GITHUB_REPOSITORY" \
+            --head "$BRANCH" --base "$BASE" \
+            --title "$TITLE" \
+            --body "$BODY" \
+            --draft \
+            || echo "::warning::PR creation failed (likely already exists or no diff yet)"
