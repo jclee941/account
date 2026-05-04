@@ -30,7 +30,7 @@ jobs:
     steps:
       - name: Fetch Dependabot metadata
         id: meta
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -41,14 +41,19 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
-        run: gh pr review --approve "$PR_URL" --body "Auto-approved by dependabot-auto-merge ($DEP_NAMES, $UPDATE_TYPE)"
+        run: |
+          gh pr review --approve "$PR_URL" \
+            --body "Auto-approved by dependabot-auto-merge ($DEP_NAMES, $UPDATE_TYPE)" \
+          || echo "::warning::approve failed for $PR_URL (already approved or insufficient permissions); continuing"
 
       - name: Enable auto-merge for safe updates
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.package-ecosystem == 'github_actions' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: |
+          gh pr merge --auto --squash "$PR_URL" \
+          || echo "::warning::auto-merge enable failed for $PR_URL (allow_auto_merge disabled or branch protection missing); continuing"
 
       - name: Flag major updates for manual review
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-major' && steps.meta.outputs.package-ecosystem != 'github_actions' }}
@@ -56,7 +61,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
-        run: gh pr comment "$PR_URL" --body "Major version bump for $DEP_NAMES - manual review required."
+        run: |
+          gh pr comment "$PR_URL" \
+            --body "Major version bump for $DEP_NAMES - manual review required." \
+          || echo "::warning::failed to post manual-review comment for $PR_URL; continuing"
 
       - name: Flag unknown update type for manual review
         if: ${{ steps.meta.outputs.update-type == '' || steps.meta.outputs.update-type == 'null' }}
@@ -65,4 +73,7 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
           ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
-        run: gh pr comment "$PR_URL" --body "Dependabot did not report a SemVer update-type for $DEP_NAMES (ecosystem=$ECOSYSTEM). Manual review required."
+        run: |
+          gh pr comment "$PR_URL" \
+            --body "Dependabot did not report a SemVer update-type for $DEP_NAMES (ecosystem=$ECOSYSTEM). Manual review required." \
+          || echo "::warning::failed to post unknown-update-type comment for $PR_URL; continuing"

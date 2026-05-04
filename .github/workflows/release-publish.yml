@@ -1,0 +1,160 @@
+name: Release Publish
+
+# When a Conventional Commit is merged to master, compute the next semver
+# from the most recent v* tag, create an annotated tag, and publish a
+# GitHub Release using release-drafter's existing draft (if any).
+#
+# Bump rules (Conventional Commits):
+#   BREAKING CHANGE / footer `!` -> major
+#   feat:                        -> minor
+#   fix: / perf: / refactor:     -> patch
+#   chore:/docs:/test:/ci:/style:/build: -> no bump (skip)
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: SHA to inspect (defaults to HEAD)
+        required: false
+        type: string
+      dry_run:
+        description: Skip the actual tag/release publish
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
+jobs:
+  bump-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history for tag scan)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine bump
+        id: bump
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          set -eu
+          SHA="${INPUT_SHA:-${GITHUB_SHA}}"
+          # Latest tag (if any).
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            PREV_VERSION="0.0.0"
+            COMMIT_RANGE="$SHA"
+          else
+            PREV_VERSION=${PREV_TAG#v}
+            COMMIT_RANGE="$PREV_TAG..$SHA"
+          fi
+          MAJOR=${PREV_VERSION%%.*}
+          MINOR_PATCH=${PREV_VERSION#*.}
+          MINOR=${MINOR_PATCH%%.*}
+          PATCH=${MINOR_PATCH#*.}
+          # Inspect every commit in the range and find the highest bump.
+          BUMP="none"
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            # BREAKING change: footer keyword OR `!` after type.
+            if echo "$line" | grep -qE '^[a-z]+(\([a-z0-9_/-]+\))?!:'; then BUMP="major"; break; fi
+            if echo "$line" | grep -qE 'BREAKING CHANGE'; then BUMP="major"; break; fi
+            if echo "$line" | grep -qE '^feat(\(.+\))?:'; then [ "$BUMP" = "major" ] || BUMP="minor"; fi
+            if echo "$line" | grep -qE '^(fix|perf|refactor)(\(.+\))?:'; then
+              [ "$BUMP" = "none" ] && BUMP="patch"
+            fi
+          done < <(git log --pretty=format:'%s%n%b' "$COMMIT_RANGE" 2>/dev/null || true)
+          if [ "$BUMP" = "none" ]; then
+            echo "::notice::No semver-bumping commits since $PREV_TAG; nothing to release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$BUMP" in
+            major) NEW="v$((MAJOR+1)).0.0" ;;
+            minor) NEW="v$MAJOR.$((MINOR+1)).0" ;;
+            patch) NEW="v$MAJOR.$MINOR.$((PATCH+1))" ;;
+          esac
+          {
+            echo "prev_tag=$PREV_TAG"
+            echo "new_tag=$NEW"
+            echo "bump=$BUMP"
+            echo "sha=$SHA"
+          } >> "$GITHUB_OUTPUT"
+          echo "Computed bump=$BUMP from $PREV_TAG to $NEW (sha=$SHA)"
+
+      - name: Create tag
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: ${{ steps.bump.outputs.new_tag }}
+          SHA: ${{ steps.bump.outputs.sha }}
+          BUMP: ${{ steps.bump.outputs.bump }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          # Idempotency: if tag already exists at the same SHA, skip create.
+          if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
+            EXISTING_SHA=$(git rev-parse "$NEW_TAG^{}")
+            if [ "$EXISTING_SHA" = "$SHA" ]; then
+              echo "::notice::Tag $NEW_TAG already at $SHA; skipping creation."
+              exit 0
+            else
+              echo "::warning::Tag $NEW_TAG exists at $EXISTING_SHA, but we want $SHA. Refusing to move; manual intervention required."
+              exit 1
+            fi
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::DRY-RUN: would create $NEW_TAG (bump=$BUMP) at $SHA"
+            exit 0
+          fi
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$NEW_TAG" \
+            -f "sha=$SHA" \
+            || { echo "::warning::tag create failed"; exit 1; }
+          echo "Created $NEW_TAG at $SHA (bump=$BUMP)"
+
+      - name: Publish release (using release-drafter draft if present)
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: ${{ steps.bump.outputs.new_tag }}
+          BUMP: ${{ steps.bump.outputs.bump }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::DRY-RUN: would publish release $NEW_TAG"
+            exit 0
+          fi
+          # Look for an existing draft release we can promote.
+          DRAFT_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            --jq '.[] | select(.draft==true) | .id' 2>/dev/null | head -1 || true)
+          if [ -n "$DRAFT_ID" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" \
+              -f "tag_name=$NEW_TAG" \
+              -f "name=$NEW_TAG" \
+              -F "draft=false" \
+              -F "prerelease=false" \
+              -F "make_latest=true" \
+              || { echo "::warning::failed to promote draft release $DRAFT_ID"; exit 1; }
+            echo "Promoted draft release -> $NEW_TAG"
+          else
+            # No draft (release-drafter not configured or hadn't run) — create.
+            gh release create "$NEW_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$NEW_TAG" \
+              --generate-notes \
+              || { echo "::warning::release create failed"; exit 1; }
+            echo "Created release $NEW_TAG with auto-generated notes"
+          fi
