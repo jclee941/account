@@ -41,7 +41,6 @@ jobs:
           rm /tmp/actionlint.tar.gz
           ./actionlint --version
         shell: bash
-        run: bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
         shell: bash
 
       - name: Run actionlint
