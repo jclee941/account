@@ -26,12 +26,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Cache pip dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-sec-${{ hashFiles('pyproject.toml', 'requirements.txt') }}
@@ -65,8 +65,11 @@ jobs:
         env:
           OPENAI.KEY: ${{ secrets.CLIPROXY_API_KEY }}
           OPENAI.API_BASE: https://cliproxy.jclee.me/v1
-          CONFIG.MODEL: kimi-k2-thinking
-          CONFIG.FALLBACK_MODELS: '["kimi-k2.6", "claude-opus-4-7"]'
+          OPENAI_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          OPENAI_BASE_URL: https://cliproxy.jclee.me/v1
+          LITELLM_LOCAL_MODEL_COST_MAP: "True"
+          CONFIG.MODEL: gpt-5.5
+          CONFIG.FALLBACK_MODELS: '["minimax-m2.7"]'
           CONFIG.RESPONSE_LANGUAGE: ko
           CONFIG.AI_TIMEOUT: '300'
           CONFIG.CUSTOM_MODEL_MAX_TOKENS: "128000"
