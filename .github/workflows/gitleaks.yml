@@ -58,6 +58,7 @@ jobs:
           GITLEAKS_NOTIFY_USER_LIST: '@jclee941'
           GITLEAKS_ENABLE_COMMENTS: 'true'
           GITLEAKS_ENABLE_SUMMARY: 'true'
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
           # GITLEAKS_CONFIG intentionally unset - gitleaks CLI auto-detects
           # repo-local .gitleaks.toml. Setting it to a non-existent path
           # would hard-fail the action across all downstream repos.
