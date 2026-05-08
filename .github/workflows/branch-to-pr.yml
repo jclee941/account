@@ -1,9 +1,9 @@
-name: Branch to Draft PR
+name: Branch to PR
 
 # When a feat/* fix/* hotfix/* docs/* refactor/* perf/* test/* chore/*
 # ci/* security/* build/* style/* revert/* branch is pushed and no
-# open PR exists targeting the default branch, open a draft PR.
-# Skip if author is jclee-bot itself (avoids recursion).
+# open PR exists targeting the default branch, open a ready-for-review PR
+# with auto-merge label. Skip if author is jclee-bot itself.
 
 on:
   push:
@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  open-draft-pr:
+  open-ready-pr:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Skip pushes from jclee-bot itself or from automated branch creation.
@@ -58,7 +58,7 @@ jobs:
        github.event.pusher.name != 'github-actions[bot]')
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -105,7 +105,7 @@ jobs:
         run: |
           set -eu
           # Build PR body.
-          BODY="## 변경사항"$'\n\n'"<!-- 자동으로 생성된 draft PR입니다. 마크다운으로 변경 내용을 설명해주세요. -->"$'\n\n'
+          BODY="## 변경사항"$'\n\n'"<!-- 자동으로 생성된 PR입니다. 마크다운으로 변경 내용을 설명해주세요. -->"$'\n\n'
           if [ -n "$ISSUE_NUM" ]; then
             BODY="${BODY}Closes #${ISSUE_NUM}"$'\n\n'
           fi
@@ -119,15 +119,15 @@ jobs:
           BODY="${BODY}$(cat /tmp/commits.txt)"
           BODY="${BODY}"$'\n\n'"> Automated by jclee-bot (branch-to-pr.yml)"
           if [ "$DRY_RUN" = "true" ]; then
-            echo "::notice::DRY-RUN: would open draft PR $BRANCH -> $BASE"
+          echo "::notice::DRY-RUN: would open ready PR $BRANCH -> $BASE"
             echo "title: $TITLE"
             echo "body: $BODY"
             exit 0
           fi
-          # Create the draft PR.
+          # Create the PR.
           gh pr create --repo "$GITHUB_REPOSITORY" \
             --head "$BRANCH" --base "$BASE" \
             --title "$TITLE" \
             --body "$BODY" \
-            --draft \
+            --label "auto-merge" \
             || echo "::warning::PR creation failed (likely already exists or no diff yet)"

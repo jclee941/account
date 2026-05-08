@@ -7,7 +7,7 @@ name: Issue to Branch
 
 on:
   issues:
-    types: [labeled, assigned]
+    types: [opened, labeled, assigned]
   workflow_dispatch:
     inputs:
       issue_number:
@@ -35,11 +35,12 @@ jobs:
     # Trigger only when the label is `in-progress` OR the issue gets assigned to a human (not the bot itself).
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      (github.event.action == 'opened') ||
       (github.event.action == 'labeled' && github.event.label.name == 'in-progress') ||
       (github.event.action == 'assigned' && github.event.assignee.login != 'jclee-bot')
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 

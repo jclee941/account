@@ -106,6 +106,34 @@ jobs:
             fi
           done
 
+      - name: Close oversized-PR advisory issues
+        if: steps.pr.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -eu
+          # Search for open [BOT] PR #N exceeds 500 LOC issues for this PR
+          BOT_ISSUES=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "in:title \"[BOT] PR #$PR_NUMBER exceeds 500 LOC\"" \
+            --json number --jq '.[] | .number' 2>/dev/null || true)
+          if [ -z "$BOT_ISSUES" ]; then
+            echo "::notice::No oversized-PR advisory issue found for PR #$PR_NUMBER"
+            exit 0
+          fi
+          for N in $BOT_ISSUES; do
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::notice::DRY-RUN: would close oversized-PR issue #$N"
+              continue
+            fi
+            gh issue close "$N" --repo "$GITHUB_REPOSITORY" \
+              --comment "Closed automatically by merged PR #$PR_NUMBER." \
+              --reason completed \
+              || echo "::warning::failed to close oversized-PR issue #$N; continuing"
+          done
+
       - name: Delete source branch
         if: steps.pr.outputs.skip != 'true'
         env:

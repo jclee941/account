@@ -1,0 +1,129 @@
+name: Downstream Health Check
+
+# Automated monitoring of critical workflows across all jclee941/* repos.
+# Creates a consolidated issue when any downstream repo has failing checks.
+# Closes the issue when all repos are green.
+
+on:
+  schedule:
+    # 09:00 KST daily (00:00 UTC)
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: Check downstream workflow health
+
+    steps:
+      - name: Checkout repository inventory
+        uses: actions/checkout@v4
+
+      - name: Check latest workflow runs across all repos
+        id: health
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+
+          REPOS=$(ruby -ryaml -e 'puts YAML.load_file("config/repos.yaml").fetch("repositories").select { |repo| repo.fetch("automation").fetch("health_check") }.map { |repo| repo.fetch("name") }.join(" ")')
+          WORKFLOWS=("actionlint" "pr-checks" "gitleaks")
+          FAILURES=()
+
+          for REPO in $REPOS; do
+            FULL="jclee941/$REPO"
+            for WF in "${WORKFLOWS[@]}"; do
+              # Get the latest run for this workflow
+              RUN_JSON=$(gh run list -R "$FULL" -w "$WF" --limit 1 --json conclusion,headBranch,url,createdAt 2>/dev/null || true)
+              if [ -z "$RUN_JSON" ] || [ "$RUN_JSON" = "[]" ]; then
+                continue
+              fi
+
+              CONCLUSION=$(echo "$RUN_JSON" | jq -r '.[0].conclusion')
+              BRANCH=$(echo "$RUN_JSON" | jq -r '.[0].headBranch')
+              URL=$(echo "$RUN_JSON" | jq -r '.[0].url')
+              CREATED=$(echo "$RUN_JSON" | jq -r '.[0].createdAt')
+
+              if [ "$CONCLUSION" != "success" ] && [ "$CONCLUSION" != "null" ] && [ -n "$CONCLUSION" ]; then
+                FAILURES+=("| $REPO | $WF | $CONCLUSION | $BRANCH | [$CREATED]($URL) |")
+              fi
+            done
+          done
+
+          if [ ${#FAILURES[@]} -gt 0 ]; then
+            {
+              echo "failures_found=true"
+              echo "count=${#FAILURES[@]}"
+              echo "details<<EOF"
+              printf '%s\n' "${FAILURES[@]}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "failures_found=false" >> "$GITHUB_OUTPUT"
+            echo "count=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update health-check issue
+        if: steps.health.outputs.failures_found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+
+          TITLE="[health-check] Downstream workflow failures detected"
+
+          # Write body to temp file to avoid YAML | conflicts
+          BODY_FILE=$(mktemp)
+          {
+            echo "## Downstream Workflow Health Check Failures"
+            echo ""
+            echo "The following critical workflows have non-success conclusions in downstream repos:"
+            echo ""
+            awk '/^details=<<EOF$/{p=1;next} /^EOF$/{p=0} p' "$GITHUB_OUTPUT"
+            echo ""
+            echo "---"
+            echo ""
+            echo "> Automated by downstream-health-check.yml"
+            echo "> Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > "$BODY_FILE"
+
+          BODY=$(cat "$BODY_FILE")
+          rm -f "$BODY_FILE"
+
+          # Search for existing open health-check issue
+          EXISTING=$(gh issue list -R "${{ github.repository }}" \
+            --state open --search "in:title \"$TITLE\"" \
+            --json number -q '.[] | .number' 2>/dev/null || true)
+
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" -R "${{ github.repository }}" --body "$BODY"
+            gh issue comment "$EXISTING" -R "${{ github.repository }}" --body "Updated: ${{ steps.health.outputs.count }} failures detected at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          else
+            gh issue create -R "${{ github.repository }}" \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --label "health-check,automated"
+          fi
+
+      - name: Close health-check issue if all green
+        if: steps.health.outputs.failures_found == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+
+          TITLE="[health-check] Downstream workflow failures detected"
+          EXISTING=$(gh issue list -R "${{ github.repository }}" \
+            --state open --search "in:title \"$TITLE\"" \
+            --json number -q '.[] | .number' 2>/dev/null || true)
+
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" -R "${{ github.repository }}" \
+              --comment "All downstream workflows are now green. Resolved at $(date -u +%Y-%m-%dT%H:%M:%SZ)." \
+              --reason completed
+          fi

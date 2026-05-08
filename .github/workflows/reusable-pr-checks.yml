@@ -3,10 +3,16 @@ on:
   workflow_call:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   check-size:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     name: Check PR Size
     steps:
       - name: 500 LOC limit check
@@ -29,6 +35,12 @@ jobs:
             || { echo "::warning::gh pr view failed (likely rate limit); skipping size check"; exit 0; }
           echo "PR #$PR_NUM (author=$AUTHOR) total changed lines: $LOC_DATA"
           if [ "$LOC_DATA" -gt 500 ]; then
+            # Dedup: if an open issue already exists for this PR, skip creating a new one.
+            EXISTING=$(gh issue list --repo "$REPO" --state open --search "\"PR #$PR_NUM exceeds 500 LOC\" in:title" --json number -q '.[] | .number' 2>/dev/null || true)
+            if [ -n "$EXISTING" ]; then
+              echo "::notice::Oversized-PR issue already exists (#$EXISTING); skipping create"
+              exit 0
+            fi
             gh issue create --repo "$REPO" \
               --title "[BOT] PR #$PR_NUM exceeds 500 LOC ($LOC_DATA lines)" \
               --body "## Large PR Detected\n\n- **PR**: #$PR_NUM\n- **Changed Lines**: $LOC_DATA\n- **Threshold**: 500\n\nThis PR exceeds the recommended maximum of 500 changed lines. Consider splitting it into smaller, focused PRs for easier review.\n\n> Automated by jclee-bot" \
@@ -38,6 +50,7 @@ jobs:
   check-title:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     name: Check PR Title
     steps:
       - name: Conventional Commits validation
@@ -63,6 +76,7 @@ jobs:
   check-branch:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     name: Check Branch Name
     steps:
       - name: Branch naming validation
@@ -88,6 +102,7 @@ jobs:
   check-description:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     name: Check PR Description
     steps:
       - name: Description validation
@@ -130,10 +145,11 @@ jobs:
   check-large-files:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     name: Check Large Files
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -166,10 +182,11 @@ jobs:
   check-sensitive-files:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     name: Check Sensitive Files
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 

@@ -26,11 +26,11 @@ jobs:
     if: github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     name: PR review via CLIProxyAPI
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Check out pr-agent source from jclee941/.github
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           repository: jclee941/.github
           ref: master
@@ -84,8 +84,12 @@ jobs:
         env:
           OPENAI.KEY: ${{ secrets.CLIPROXY_API_KEY }}
           OPENAI.API_BASE: https://cliproxy.jclee.me/v1
+          OPENAI_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          OPENAI_BASE_URL: https://cliproxy.jclee.me/v1
+          LITELLM_LOG: 'DEBUG'
+          LITELLM_LOCAL_MODEL_COST_MAP: "True"
           CONFIG.MODEL: kimi-k2.6
-          CONFIG.FALLBACK_MODELS: '["kimi-k2.5", "claude-sonnet-4-6"]'
+          CONFIG.FALLBACK_MODELS: '["minimax-m2.7"]'
           CONFIG.RESPONSE_LANGUAGE: ko
           CONFIG.AI_TIMEOUT: "180"
           CONFIG.CUSTOM_MODEL_MAX_TOKENS: "128000"
@@ -102,6 +106,7 @@ jobs:
           PR_REVIEWER.NUM_MAX_FINDINGS: "5"
           PR_REVIEWER.PUBLISH_OUTPUT_NO_SUGGESTIONS: "false"
           GITHUB__USER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # NOTE: Dynaconf maps `GITHUB__USER_TOKEN` (double underscore) to the nested setting
           # `settings.github.user_token` because pr-agent's config_loader uses `envvar_prefix=False`
           # with the standard env_loader. Dot-notation names (e.g. `GITHUB.USER_TOKEN`) are NOT
@@ -127,7 +132,7 @@ jobs:
         run: |
           set -eo pipefail
 
-          # Preflight: confirm dynaconf actually loaded the GitHub token
+          # Preflight: confirm dynaconf actually loaded the GitHub token and OpenAI config
           .venv/bin/python - <<'PY'
           from pr_agent.config_loader import get_settings
           tok = get_settings().get("github.user_token")
@@ -135,80 +140,75 @@ jobs:
               raise SystemExit("ERROR: settings.github.user_token is empty. "
                                "Confirm GITHUB__USER_TOKEN env var is exported.")
           print("preflight ok: github.user_token configured")
+
+          # DEBUG: verify OpenAI settings that litellm will use
+          api_key = get_settings().get("openai.key")
+          api_base = get_settings().get("openai.api_base")
+          print(f"DEBUG: openai.key present={bool(api_key)}, openai.api_base={api_base}")
+          if not api_key:
+              raise SystemExit("ERROR: openai.key is empty. Confirm OPENAI.KEY env var is exported.")
+          if not api_base:
+              raise SystemExit("ERROR: openai.api_base is empty. Confirm OPENAI.API_BASE env var is exported.")
+
+          # DEBUG: test a minimal litellm completion to isolate failure
+          import asyncio
+          import litellm
+          litellm.set_verbose = True
+          async def _test():
+              try:
+                  resp = await litellm.acompletion(
+                      model="openai/kimi-k2.6",
+                      messages=[{"role": "user", "content": "say pong"}],
+                      api_key=api_key,
+                      api_base=api_base,
+                      timeout=30,
+                      max_tokens=10,
+                  )
+                  print(f"DEBUG: litellm test OK: {resp}")
+              except Exception as e:
+                  print(f"DEBUG: litellm test FAILED: {type(e).__name__}: {e}")
+                  raise SystemExit(1)
+          asyncio.run(_test())
           PY
 
-          # Dynamic command selection based on PR characteristics.
-          # Decision order (first match wins):
-          #   1. Dependabot/bot author     -> review
-          #   2. Docs-only diff            -> describe
-          #   3. feat:/fix:/refactor: title-> describe review improve agentic_review
-          #   4. < 50 LOC                  -> review
-          #   5. > 1000 LOC                -> describe review
-          #   6. default                   -> describe review improve agentic_review
-          PR_NUM=${{ github.event.pull_request.number }}
-          PR_DATA=$(gh pr view "$PR_NUM" --repo "$GITHUB_REPOSITORY" \
-            --json additions,deletions,files,title,author 2>/dev/null || echo '{}')
-          ADDS=$(echo "$PR_DATA" | jq -r '.additions // 0')
-          DELS=$(echo "$PR_DATA" | jq -r '.deletions // 0')
-          LOC=$((ADDS + DELS))
-          AUTHOR=$(echo "$PR_DATA" | jq -r '.author.login // ""')
-          TITLE=$(echo "$PR_DATA" | jq -r '.title // ""')
-          # Treat the diff as docs-only when EVERY changed file matches the docs allowlist.
-          NON_DOCS=$(echo "$PR_DATA" | jq -r '.files[]?.path // empty' \
-            | grep -vE '\.(md|rst|txt|adoc)$|^docs/|^README|^LICENSE|^NOTICE|^CONTRIBUTING|^\.github/(ISSUE|PULL_REQUEST)' || true)
-          DOCS_ONLY=false
-          if [ -n "$(echo "$PR_DATA" | jq -r '.files[]?.path' 2>/dev/null)" ] && [ -z "$NON_DOCS" ]; then
-            DOCS_ONLY=true
-          fi
-          if echo "$AUTHOR" | grep -qE '\[bot\]$'; then
-            CMDS="review"
-            REASON="bot author"
-          elif [ "$DOCS_ONLY" = "true" ]; then
-            CMDS="describe"
-            REASON="docs-only diff"
-          elif echo "$TITLE" | grep -qE '^(feat|fix|refactor)(\([a-z0-9_/-]+\))?!?:'; then
-            CMDS="describe review improve agentic_review"
-            REASON="feat/fix/refactor PR"
-          elif [ "$LOC" -lt 50 ]; then
-            CMDS="review"
-            REASON="small PR (<50 LOC)"
-          elif [ "$LOC" -gt 1000 ]; then
-            CMDS="describe review"
-            REASON="large PR (>1000 LOC)"
-          else
-            CMDS="describe review improve agentic_review"
-            REASON="default"
-          fi
-          echo "::notice::PR #$PR_NUM (LOC=$LOC, author=$AUTHOR, title=$TITLE)"
-          echo "::notice::Selected commands: $CMDS  ($REASON)"
+          # DEBUG: run comprehensive handler debug to isolate streaming failure
+          .venv/bin/python - <<'PY'
+          import asyncio
+          import os
+          import sys
+          import traceback
+          sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+          from pr_agent.config_loader import get_settings
+          from pr_agent.algo.ai_handlers.litellm_ai_handler import LiteLLMAIHandler
 
-          # Run the selected commands and capture pr-agent's combined output.
-          # pr-agent's CLI exits 0 even on fatal provider errors (silent-success),
-          # so we additionally grep the captured log for known fatal patterns.
-          : > /tmp/pr-agent.log
-          status=0
-          for cmd in $CMDS; do
-            echo "--- running pr-agent $cmd ---" | tee -a /tmp/pr-agent.log
-            set +e
-            .venv/bin/python -m pr_agent.cli --pr_url "$PR_URL" "$cmd" 2>&1 | tee -a /tmp/pr-agent.log
-            cmd_status=${PIPESTATUS[0]}
-            set -e
-            if [ "$cmd_status" -ne 0 ]; then
-              status=$cmd_status
-              echo "::error::pr-agent $cmd exited with status $cmd_status"
-              break
-            fi
-          done
+          async def debug():
+              print('=== Debug: LiteLLMAIHandler initialization ===')
+              try:
+                  handler = LiteLLMAIHandler()
+                  print(f'handler.api_base = {handler.api_base!r}')
+                  print(f'config.model = {get_settings().config.model!r}')
+                  print(f'config.ai_timeout = {get_settings().config.ai_timeout!r}')
+              except Exception as e:
+                  print(f'Handler init FAILED: {type(e).__name__}: {e}')
+                  traceback.print_exc()
+                  return
 
-          if [ "$status" -ne 0 ]; then
-            echo "::error::pr-agent CLI exited with status $status"
-            exit "$status"
-          fi
+              print('\n=== Debug: Handler chat_completion with kimi-k2.6 (streaming) ===')
+              try:
+                  resp, finish_reason = await handler.chat_completion(
+                      model='kimi-k2.6',
+                      system='You are a helpful assistant.',
+                      user='Say hello.',
+                      temperature=0.2,
+                  )
+                  print(f'Handler OK: resp={resp[:100]!r}, finish_reason={finish_reason}')
+              except Exception as e:
+                  print(f'Handler FAILED: {type(e).__name__}: {e}')
+                  traceback.print_exc()
 
-          # Silent-failure guard — pr_agent CLI returns exit 0 on most logical
-          # failures (caught Exception at pr_reviewer.py:184). Patterns below are
-          # confirmed in source (file:line in commit message).
-          if grep -E "Failed to generate prediction with any model|Failed to review PR|Rate limit error during LLM inference|Unknown error during LLM inference|Error during LLM inference|Failed to publish (code suggestion|inline code comments fallback|diffview file summary|labels)|Cannot publish a comment if missing PR|Failed to get (diff files|merge base commit)|Failed to add AI metadata|Empty prediction|ai handler not set|Unable to decode JSON response|Failed to parse AI prediction|Rate limit exceeded for git provider|BoxKeyError|GitHub token is required|Failed to get git provider|AuthenticationError" /tmp/pr-agent.log | grep -vE "(Empty diff for PR:|PR has no files:|Incremental review is enabled.*but there are no new (files|commits)|Review output is not published|Incremental review is not supported)"; then
-            echo "::error::pr-agent reported a fatal error but exited 0 (silent failure)"
-            exit 1
-          fi
+          asyncio.run(debug())
+          PY
+
+          # Dynamic command selection, execution, and silent-failure detection
+          # are handled by pr_review_runner.py (tested in scripts/pr_review_runner_test.py).
+          .venv/bin/python scripts/pr_review_runner.py "$PR_URL"

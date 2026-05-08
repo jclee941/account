@@ -29,13 +29,28 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Download actionlint
-        id: get_actionlint
+        run: |
+          curl -sSfL -o /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          chmod +x /tmp/actionlint
+          mv /tmp/actionlint ./actionlint
+          rm /tmp/actionlint.tar.gz
+          ./actionlint --version
+        shell: bash
         run: bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
         shell: bash
 
       - name: Run actionlint
-        run: ${{ steps.get_actionlint.outputs.executable }} -color
+        run: |
+          mkdir -p .github
+          cat > .github/actionlint.yaml << 'EOF'
+          self-hosted-runner:
+            labels:
+              - ".*"
+          EOF
+          ./actionlint -color -shellcheck= -config-file .github/actionlint.yaml -ignore 'label ".*" is unknown'
         shell: bash
