@@ -49,7 +49,7 @@ concurrency:
 
 jobs:
   open-ready-pr:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 5
     # Skip pushes from jclee-bot itself or from automated branch creation.
     if: >-
