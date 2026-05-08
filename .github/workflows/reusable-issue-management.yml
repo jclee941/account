@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   stale-check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Stale Issue Detection
@@ -29,7 +29,7 @@ jobs:
           remove-stale-when-updated: true
 
   auto-label:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     if: github.event_name == 'issues' && github.event.action == 'opened'
     steps:
@@ -84,7 +84,7 @@ jobs:
             }
 
   stale-remove:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     if: github.event_name == 'issue_comment' || (github.event_name == 'issues' && contains(fromJson('["reopened", "edited"]'), github.event.action))
     steps:
@@ -107,7 +107,7 @@ jobs:
 
 
   issue-stats:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
