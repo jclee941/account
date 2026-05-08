@@ -27,7 +27,7 @@ jobs:
 
       - name: Create issue for broken links
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const body = `## 🚨 문서 링크 깨짐 감지\n\n` +
@@ -77,7 +77,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check README sync
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { data: files } = await github.rest.pulls.listFiles({
@@ -133,7 +133,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check API documentation
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { data: files } = await github.rest.pulls.listFiles({
