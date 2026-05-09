@@ -26,7 +26,7 @@ permissions:
 jobs:
   dependabot:
     if: ${{ github.actor == 'dependabot[bot]' && github.event.pull_request.draft == false }}
-    runs-on: self-hosted
+    runs-on: ${{ github.event.repository.private && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Fetch Dependabot metadata
         id: meta
