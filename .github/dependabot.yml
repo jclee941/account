@@ -32,6 +32,27 @@ updates:
           - "minor"
           - "patch"
 
+  # JavaScript/TypeScript dependencies (package.json + package-lock.json)
+  # Dependabot skips repos without these manifest files, so this is safe
+  # for all downstream repos.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+
   # Go scripts (go.mod) - none yet, but ready when scripts/ gets a go.mod
   # - package-ecosystem: "gomod"
   #   directory: "/scripts"
