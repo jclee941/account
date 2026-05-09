@@ -10,6 +10,11 @@ permissions:
 
 jobs:
   pr-checks:
+    # Run for every PR including dependabot[bot]. The required status
+    # contexts on branch protection (Check PR Title, Check Branch Name)
+    # apply to dependabot too; Dependabot satisfies them automatically
+    # because conventional commit titles and feat/fix/chore branch names
+    # are its default behavior.
     if: github.event_name == 'pull_request'
-    uses: ./.github/workflows/reusable-pr-checks.yml
+    uses: jclee941/.github/.github/workflows/reusable-pr-checks.yml@master
     secrets: inherit
