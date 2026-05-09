@@ -11,7 +11,7 @@ permissions:
 jobs:
   check-size:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     name: Check PR Size
     steps:
@@ -49,7 +49,7 @@ jobs:
 
   check-title:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     name: Check PR Title
     steps:
@@ -75,7 +75,7 @@ jobs:
 
   check-branch:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     name: Check Branch Name
     steps:
@@ -101,7 +101,7 @@ jobs:
 
   check-description:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     name: Check PR Description
     steps:
@@ -144,7 +144,7 @@ jobs:
 
   check-large-files:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     name: Check Large Files
     steps:
@@ -181,7 +181,7 @@ jobs:
 
   check-sensitive-files:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     name: Check Sensitive Files
     steps:
