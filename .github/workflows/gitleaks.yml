@@ -56,15 +56,22 @@ jobs:
         run: |
           rm -rf /tmp/gitleaks.tmp /tmp/gitleaks-8.24.3
 
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
+      - name: Install gitleaks
+        run: |
+          wget -qO /tmp/gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+          chmod +x /usr/local/bin/gitleaks
+
+      - name: Run gitleaks detect
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            echo "Scanning PR commits: ${BASE_SHA}^..${HEAD_SHA}"
+            gitleaks detect --source . --log-opts "${BASE_SHA}^..${HEAD_SHA}" --redact --verbose --exit-code 1
+          else
+            echo "Scanning full repository"
+            gitleaks detect --source . --redact --verbose --exit-code 1
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # GITLEAKS_LICENSE only required for organization-scope scanning.
-          GITLEAKS_NOTIFY_USER_LIST: '@jclee941'
-          GITLEAKS_ENABLE_COMMENTS: 'true'
-          GITLEAKS_ENABLE_SUMMARY: 'true'
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
-          # GITLEAKS_CONFIG intentionally unset - gitleaks CLI auto-detects
-          # repo-local .gitleaks.toml. Setting it to a non-existent path
-          # would hard-fail the action across all downstream repos.
