@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   enable-auto-merge:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     # Trigger on either:
     #   1. an APPROVED review on a non-draft, non-bot PR
