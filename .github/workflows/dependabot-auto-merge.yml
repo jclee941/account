@@ -39,12 +39,42 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          APPROVER_LOGIN: github-actions[bot]
           DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
         run: |
-          gh pr review --approve "$PR_URL" \
-            --body "Auto-approved by dependabot-auto-merge ($DEP_NAMES, $UPDATE_TYPE)" \
-          || echo "::warning::approve failed for $PR_URL (already approved or insufficient permissions); continuing"
+          set -euo pipefail
+
+          approval_id="$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+            --paginate \
+            --jq ".[] | select(.user.login == \"$APPROVER_LOGIN\" and .state == \"APPROVED\") | .id" \
+            | tail -n 1)"
+
+          if [[ -n "$approval_id" ]]; then
+            echo "::notice::PR $PR_URL is already approved by $APPROVER_LOGIN (review id: $approval_id); skipping approval"
+            exit 0
+          fi
+
+          if gh pr review --approve "$PR_URL" \
+            --body "Auto-approved by dependabot-auto-merge ($DEP_NAMES, $UPDATE_TYPE)"; then
+            exit 0
+          fi
+
+          status=$?
+          approval_id="$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+            --paginate \
+            --jq ".[] | select(.user.login == \"$APPROVER_LOGIN\" and .state == \"APPROVED\") | .id" \
+            | tail -n 1)"
+
+          if [[ -n "$approval_id" ]]; then
+            echo "::warning::approval command failed, but PR $PR_URL is now approved by $APPROVER_LOGIN (review id: $approval_id); treating as idempotent success"
+            exit 0
+          fi
+
+          echo "::error::failed to approve $PR_URL"
+          exit "$status"
 
       - name: Enable auto-merge for safe updates
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.package-ecosystem == 'github_actions' }}
@@ -52,28 +82,117 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr merge --auto --squash "$PR_URL" \
-          || echo "::warning::auto-merge enable failed for $PR_URL (allow_auto_merge disabled or branch protection missing); continuing"
+          set -euo pipefail
+
+          auto_merge_enabled="$(gh pr view "$PR_URL" \
+            --json autoMergeRequest \
+            --jq '.autoMergeRequest != null')"
+
+          if [[ "$auto_merge_enabled" == "true" ]]; then
+            echo "::notice::auto-merge is already enabled for $PR_URL; skipping"
+            exit 0
+          fi
+
+          if gh pr merge --auto --squash "$PR_URL"; then
+            exit 0
+          fi
+
+          status=$?
+          auto_merge_enabled="$(gh pr view "$PR_URL" \
+            --json autoMergeRequest \
+            --jq '.autoMergeRequest != null')"
+
+          if [[ "$auto_merge_enabled" == "true" ]]; then
+            echo "::warning::auto-merge command failed, but auto-merge is now enabled for $PR_URL; treating as idempotent success"
+            exit 0
+          fi
+
+          echo "::error::failed to enable auto-merge for $PR_URL"
+          exit "$status"
 
       - name: Flag major updates for manual review
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-major' && steps.meta.outputs.package-ecosystem != 'github_actions' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          COMMENT_AUTHOR: github-actions[bot]
           DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
         run: |
-          gh pr comment "$PR_URL" \
-            --body "Major version bump for $DEP_NAMES - manual review required." \
-          || echo "::warning::failed to post manual-review comment for $PR_URL; continuing"
+          set -euo pipefail
+
+          marker="<!-- dependabot-auto-merge:manual-review:major -->"
+          body="$marker"$'\n'"Major version bump for $DEP_NAMES - manual review required."
+
+          comment_id="$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq ".[] | select(.user.login == \"$COMMENT_AUTHOR\" and (.body | contains(\"$marker\"))) | .id" \
+            | tail -n 1)"
+
+          if [[ -n "$comment_id" ]]; then
+            echo "::notice::major-update manual-review comment already exists on $PR_URL (comment id: $comment_id); skipping"
+            exit 0
+          fi
+
+          if gh pr comment "$PR_URL" --body "$body"; then
+            exit 0
+          fi
+
+          status=$?
+          comment_id="$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq ".[] | select(.user.login == \"$COMMENT_AUTHOR\" and (.body | contains(\"$marker\"))) | .id" \
+            | tail -n 1)"
+
+          if [[ -n "$comment_id" ]]; then
+            echo "::warning::comment command failed, but major-update comment now exists on $PR_URL (comment id: $comment_id); treating as idempotent success"
+            exit 0
+          fi
+
+          echo "::error::failed to post major-update manual-review comment for $PR_URL"
+          exit "$status"
 
       - name: Flag unknown update type for manual review
         if: ${{ steps.meta.outputs.update-type == '' || steps.meta.outputs.update-type == 'null' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          COMMENT_AUTHOR: github-actions[bot]
           DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
           ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
         run: |
-          gh pr comment "$PR_URL" \
-            --body "Dependabot did not report a SemVer update-type for $DEP_NAMES (ecosystem=$ECOSYSTEM). Manual review required." \
-          || echo "::warning::failed to post unknown-update-type comment for $PR_URL; continuing"
+          set -euo pipefail
+
+          marker="<!-- dependabot-auto-merge:manual-review:unknown-update-type -->"
+          body="$marker"$'\n'"Dependabot did not report a SemVer update-type for $DEP_NAMES (ecosystem=$ECOSYSTEM). Manual review required."
+
+          comment_id="$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq ".[] | select(.user.login == \"$COMMENT_AUTHOR\" and (.body | contains(\"$marker\"))) | .id" \
+            | tail -n 1)"
+
+          if [[ -n "$comment_id" ]]; then
+            echo "::notice::unknown-update-type manual-review comment already exists on $PR_URL (comment id: $comment_id); skipping"
+            exit 0
+          fi
+
+          if gh pr comment "$PR_URL" --body "$body"; then
+            exit 0
+          fi
+
+          status=$?
+          comment_id="$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq ".[] | select(.user.login == \"$COMMENT_AUTHOR\" and (.body | contains(\"$marker\"))) | .id" \
+            | tail -n 1)"
+
+          if [[ -n "$comment_id" ]]; then
+            echo "::warning::comment command failed, but unknown-update-type comment now exists on $PR_URL (comment id: $comment_id); treating as idempotent success"
+            exit 0
+          fi
+
+          echo "::error::failed to post unknown-update-type manual-review comment for $PR_URL"
+          exit "$status"
