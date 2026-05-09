@@ -42,7 +42,9 @@ concurrency:
 
 jobs:
   scan:
-    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    # Gitleaks does not need self-hosted resources; ubuntu-latest avoids
+    # gitleaks-action@v2 install failures on self-hosted runners.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
