@@ -23,6 +23,9 @@ jobs:
     steps:
       - name: Checkout repository inventory
         uses: actions/checkout@v4
+        with:
+          repository: jclee941/.github
+          path: .github-inventory
 
       - name: Check latest workflow runs across all repos
         id: health
@@ -31,26 +34,20 @@ jobs:
         run: |
           set -u
 
-          REPOS=$(ruby -ryaml -e 'puts YAML.load_file("config/repos.yaml").fetch("repositories").select { |repo| repo.fetch("automation").fetch("health_check") }.map { |repo| repo.fetch("name") }.join(" ")')
+          REPOS=$(ruby -ryaml -e 'puts YAML.load_file(".github-inventory/config/repos.yaml").fetch("repositories").select { |repo| repo.fetch("automation").fetch("health_check") }.map { |repo| repo.fetch("name") }.join(" ")')
           WORKFLOWS=("actionlint" "pr-checks" "gitleaks")
           FAILURES=()
 
           for REPO in $REPOS; do
             FULL="jclee941/$REPO"
             for WF in "${WORKFLOWS[@]}"; do
-              # Get the latest run for this workflow
-              RUN_JSON=$(gh run list -R "$FULL" -w "$WF" --limit 1 --json conclusion,headBranch,url,createdAt 2>/dev/null || true)
-              if [ -z "$RUN_JSON" ] || [ "$RUN_JSON" = "[]" ]; then
+              LATEST=$(gh run list -R "$FULL" --workflow "$WF" --limit 1 --json conclusion,status,createdAt --jq '.[0]')
+              if [ -z "$LATEST" ] || [ "$LATEST" = "[]" ]; then
                 continue
               fi
-
-              CONCLUSION=$(echo "$RUN_JSON" | jq -r '.[0].conclusion')
-              BRANCH=$(echo "$RUN_JSON" | jq -r '.[0].headBranch')
-              URL=$(echo "$RUN_JSON" | jq -r '.[0].url')
-              CREATED=$(echo "$RUN_JSON" | jq -r '.[0].createdAt')
-
-              if [ "$CONCLUSION" != "success" ] && [ "$CONCLUSION" != "null" ] && [ -n "$CONCLUSION" ]; then
-                FAILURES+=("| $REPO | $WF | $CONCLUSION | $BRANCH | [$CREATED]($URL) |")
+              CONCLUSION=$(echo "$LATEST" | jq -r '.conclusion')
+              if [ "$CONCLUSION" != "success" ] && [ "$CONCLUSION" != "" ]; then
+                FAILURES+=("- $FULL \`$WF\` → conclusion=\`$CONCLUSION\`")
               fi
             done
           done
