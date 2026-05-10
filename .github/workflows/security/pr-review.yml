@@ -26,6 +26,10 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Check out base branch
         uses: actions/checkout@v4
 
@@ -108,3 +112,14 @@ jobs:
             이 변경이 공격 표면에 미치는 영향을 명시하십시오.
         run: |
           python -m pr_agent.servers.github_action_runner
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Security PR Review failed for PR #${{ github.event.pull_request.number }}`
+              body: `Security PR Review workflow failed for PR #${{ github.event.pull_request.number }}. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
+            });

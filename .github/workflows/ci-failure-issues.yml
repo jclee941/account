@@ -57,6 +57,10 @@ jobs:
     # Trigger only on FAILURE conclusion (success → close stale below).
     # workflow_run only fires on default branch by default, which is what we want.
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Compute event
         id: ev
         env:

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":disableDependencyDashboard"
+  ],
+  "schedule": [
+    "before 9am on monday"
+  ],
+  "timezone": "Asia/Seoul",
+  "labels": ["dependencies", "renovate"],
+  "automergeStrategy": "squash",
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "matchPackageNames": ["*"],
+      "automerge": true,
+      "automergeType": "pr",
+      "requiredStatusChecks": null
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "matchPackageNames": ["*"],
+      "automerge": false,
+      "labels": ["dependencies", "renovate", "major-upgrade"]
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "labels": ["dependencies", "renovate", "github-actions"]
+    },
+    {
+      "matchManagers": ["gomod"],
+      "groupName": "Go modules",
+      "labels": ["dependencies", "renovate", "go"]
+    },
+    {
+      "matchManagers": ["pip_requirements", "pyproject", "setup.cfg"],
+      "groupName": "Python dependencies",
+      "labels": ["dependencies", "renovate", "python"]
+    }
+  ],
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 10,
+  "commitMessagePrefix": "chore(deps):",
+  "commitMessageTopic": "{{depName}}",
+  "reviewers": ["jclee941"],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore"
+}

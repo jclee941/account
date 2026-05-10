@@ -16,6 +16,10 @@ jobs:
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Stale Issue Detection
         uses: actions/stale@v10
         with:
@@ -37,6 +41,10 @@ jobs:
     timeout-minutes: 10
     if: github.event_name == 'issues' && github.event.action == 'opened'
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -92,6 +100,10 @@ jobs:
     timeout-minutes: 10
     if: github.event_name == 'issue_comment' || (github.event_name == 'issues' && contains(fromJson('["reopened", "edited"]'), github.event.action))
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Remove stale label on activity
         uses: actions/github-script@v7
         with:
@@ -115,6 +127,10 @@ jobs:
     timeout-minutes: 10
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Generate Issue Statistics
         uses: actions/github-script@v7
         with:

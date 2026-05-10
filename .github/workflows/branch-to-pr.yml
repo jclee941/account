@@ -57,6 +57,10 @@ jobs:
       (github.event.pusher.name != 'jclee-bot' &&
        github.event.pusher.name != 'github-actions[bot]')
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Checkout
         uses: actions/checkout@v6
         with:
