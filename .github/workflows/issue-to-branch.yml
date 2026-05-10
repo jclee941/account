@@ -39,6 +39,10 @@ jobs:
       (github.event.action == 'labeled' && github.event.label.name == 'in-progress') ||
       (github.event.action == 'assigned' && github.event.assignee.login != 'jclee-bot')
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Checkout
         uses: actions/checkout@v6
         with:

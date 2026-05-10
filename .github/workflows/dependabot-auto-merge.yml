@@ -33,6 +33,10 @@ jobs:
     runs-on: ${{ github.event.repository.private && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Fetch Dependabot metadata
         id: meta
         uses: dependabot/fetch-metadata@v3
