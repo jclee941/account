@@ -8,6 +8,10 @@ permissions:
   pull-requests: write
   issues: write
 
+concurrency:
+  group: reusable-pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check-size:
     if: github.event_name == 'pull_request'

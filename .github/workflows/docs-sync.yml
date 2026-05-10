@@ -16,6 +16,10 @@ permissions:
   issues: write
   pull-requests: write
 
+concurrency:
+  group: docs-sync-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   docs-sync:
     if: github.event_name == 'push' || github.event_name == 'pull_request'

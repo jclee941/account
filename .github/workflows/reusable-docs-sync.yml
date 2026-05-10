@@ -8,6 +8,10 @@ permissions:
   issues: write
   pull-requests: write
 
+concurrency:
+  group: reusable-docs-sync-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   link-check:
     if: github.event_name == 'pull_request'

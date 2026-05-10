@@ -7,6 +7,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: reusable-issue-management-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   stale-check:
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
