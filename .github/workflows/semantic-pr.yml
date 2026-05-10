@@ -56,7 +56,7 @@ jobs:
           subjectPattern: ^[A-Za-z].+$
           subjectPatternError: |
             The subject must start with an uppercase or lowercase letter and not end with a period.
-          headerPattern: ^(\w*)(?:\(([^\)]*)\))?: (.*)$
+          headerPattern: "^(\\w*)(?:\\(([^\\)]*)\\))?: (.*)$"
           headerPatternCorrespondence: type, scope, subject
           validateSingleCommit: true
           validateSingleCommitMatchesPrTitle: false

@@ -16,7 +16,6 @@
       "matchPackageNames": ["*"],
       "automerge": true,
       "automergeType": "pr",
-      "requiredStatusChecks": null
     },
     {
       "matchUpdateTypes": ["major"],
