@@ -25,7 +25,7 @@ jobs:
   pr_review:
     strategy:
       matrix:
-        model: [kimi-k2.6, minimax-m2.7]
+        model: [minimax-m2.7, gpt-5.5]
       fail-fast: false
     if: github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
@@ -175,7 +175,7 @@ jobs:
           async def _test():
               try:
                   resp = await litellm.acompletion(
-                      model="openai/kimi-k2.6",
+                      model="${{ matrix.model }}",
                       messages=[{"role": "user", "content": "say pong"}],
                       api_key=api_key,
                       api_base=api_base,
@@ -211,10 +211,10 @@ jobs:
                   traceback.print_exc()
                   return
 
-              print('\n=== Debug: Handler chat_completion with kimi-k2.6 (streaming) ===')
+              print('\n=== Debug: Handler chat_completion with ${{ matrix.model }} (streaming) ===')
               try:
                   resp, finish_reason = await handler.chat_completion(
-                      model='kimi-k2.6',
+                      model='${{ matrix.model }}',
                       system='You are a helpful assistant.',
                       user='Say hello.',
                       temperature=0.2,
