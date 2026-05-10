@@ -28,6 +28,10 @@ jobs:
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Checkout PR branch
         uses: actions/checkout@v6
         with:
@@ -45,6 +49,10 @@ jobs:
         id: fix
         run: |
           echo "Running validate-naming --fix..."
+          if [ ! -d "scripts" ]; then
+            echo "No scripts directory found, skipping"
+            exit 0
+          fi
           cd scripts
           go run ./cmd/validate-naming --fix || true
           echo "Done"
@@ -66,17 +74,33 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          BRANCH="${{ github.event.pull_request.head.ref }}"
-          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
-
+          BRANCH="${BRANCH}"
+          DEFAULT_BRANCH="${DEFAULT_BRANCH}"
           if [ -z "$BRANCH" ] || [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
             echo "::error::Refusing to push to default branch"
             exit 1
           fi
-
           git config user.email "bot@jclee.me"
           git config user.name "github-bot"
           git add -A
           git commit -m "bot: auto-fix naming conventions [skip ci]"
           git push origin "HEAD:${BRANCH}"
+          echo "Pushed fixes to ${BRANCH}"
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 ${{ github.workflow }} failed: ${context.runId}`,
+              body: `${{ github.workflow }} workflow failed. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
+              });
+            } catch (e) {
+              core.warning(`Could not create issue: ${e.message}`);
+            }

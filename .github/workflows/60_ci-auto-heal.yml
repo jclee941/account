@@ -1,0 +1,190 @@
+name: CI Auto-Heal
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Daily 03:00 UTC
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+concurrency:
+  group: ci-auto-heal
+  cancel-in-progress: false
+jobs:
+  heal:
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    name: Cross-repo CI auto-heal
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - name: Setup tooling
+        run: |
+          terraform version 2>/dev/null || echo "terraform not available"
+          node --version
+          go version 2>/dev/null || echo "go not available"
+      - name: Auto-heal failed CI across repos
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          REPOS="account blacklist bug hycu_fsds idle-outpost opencode resume safetywallet splunk terraform tmux"
+          HEAL_COUNT=0
+          ISSUE_COUNT=0
+          for REPO_NAME in $REPOS; do
+            FULL="jclee941/$REPO_NAME"
+            echo ""
+            echo "========================================"
+            echo "Checking $FULL"
+            echo "========================================"
+            FAILED=$(gh run list -R "$FULL" --status failure --limit 3 --json databaseId,name,headBranch,createdAt --jq '.[] | @base64' 2>/dev/null || true)
+            if [ -z "$FAILED" ]; then
+              echo "   No recent failures"
+              continue
+            fi
+            for RUN_B64 in $FAILED; do
+              RUN_JSON=$(echo "$RUN_B64" | base64 -d)
+              RUN_ID=$(echo "$RUN_JSON" | jq -r '.databaseId')
+              WF_NAME=$(echo "$RUN_JSON" | jq -r '.name')
+              BRANCH=$(echo "$RUN_JSON" | jq -r '.headBranch')
+              echo ""
+              echo "  🚨 Failed: $WF_NAME (run $RUN_ID)"
+              if echo "$WF_NAME" | grep -qiE "actionlint|pr-checks|gitleaks|semantic-pr|bot.auto.fix|pr.review|enable.auto.merge|open.ready.pr"; then
+                echo "  ⏭ Skipping (managed workflow)"
+                continue
+              fi
+              TEMP_DIR=$(mktemp -d)
+              if ! gh repo clone "$FULL" "$TEMP_DIR" -- --depth 1 --branch "$BRANCH" 2>/dev/null; then
+                echo "   Failed to clone $FULL"
+                rm -rf "$TEMP_DIR"
+                continue
+              fi
+              cd "$TEMP_DIR"
+              FIXED=false
+              FIX_SUMMARY=""
+              if [ -f "package.json" ]; then
+                if echo "$WF_NAME" | grep -qiE "audit|dependency|security|npm"; then
+                  echo "   Attempting npm audit fix"
+                  if npm audit fix --package-lock-only 2>/dev/null; then
+                    FIXED=true
+                    FIX_SUMMARY="$FIX_SUMMARY\n- npm audit fix --package-lock-only"
+                  elif npm install --package-lock-only 2>/dev/null && npm audit fix --package-lock-only 2>/dev/null; then
+                    FIXED=true
+                    FIX_SUMMARY="$FIX_SUMMARY\n- npm audit fix (with package-lock generation)"
+                  fi
+                fi
+                if echo "$WF_NAME" | grep -qiE "lint|prettier|format|style"; then
+                  echo "   Attempting lint/format fixes"
+                  if npm run lint:fix 2>/dev/null; then
+                    FIXED=true
+                    FIX_SUMMARY="$FIX_SUMMARY\n- npm run lint:fix"
+                  elif npx prettier --write . 2>/dev/null; then
+                    FIXED=true
+                    FIX_SUMMARY="$FIX_SUMMARY\n- prettier --write"
+                  fi
+                fi
+                if [ "$FIXED" != "true" ] && [ -f "package-lock.json" ]; then
+                  echo "   Attempting npm update"
+                  if npm update --package-lock-only 2>/dev/null; then
+                    FIXED=true
+                    FIX_SUMMARY="$FIX_SUMMARY\n- npm update"
+                  fi
+                fi
+              fi
+              if [ -f "go.mod" ]; then
+                if echo "$WF_NAME" | grep -qiE "go|mod|tidy|build|test"; then
+                  echo "   Attempting go mod tidy"
+                  if go mod tidy 2>/dev/null; then
+                    FIXED=true
+                    FIX_SUMMARY="$FIX_SUMMARY\n- go mod tidy"
+                  fi
+                fi
+              fi
+              if ls *.tf >/dev/null 2>&1; then
+                if echo "$WF_NAME" | grep -qiE "terraform|fmt|validate"; then
+                  echo "   Attempting terraform fmt"
+                  if terraform fmt -recursive 2>/dev/null; then
+                    FIXED=true
+                    FIX_SUMMARY="$FIX_SUMMARY\n- terraform fmt -recursive"
+                  fi
+                fi
+              fi
+              if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+                if echo "$WF_NAME" | grep -qiE "python|lint|ruff|black|format"; then
+                  echo "   Attempting Python format fixes"
+                  if ruff check --fix . 2>/dev/null; then
+                    FIXED=true
+                    FIX_SUMMARY="$FIX_SUMMARY\n- ruff check --fix"
+                  elif black . 2>/dev/null; then
+                    FIXED=true
+                    FIX_SUMMARY="$FIX_SUMMARY\n- black ."
+                  fi
+                fi
+              fi
+              if [ "$FIXED" = "true" ] && ! git diff --quiet 2>/dev/null; then
+                HEAL_BRANCH="chore/auto-heal-$(date +%s)"
+                git checkout -b "$HEAL_BRANCH"
+                git add .
+                git commit -m "chore: auto-heal CI failures [skip ci]" || {
+                  echo "   Nothing to commit after fix"
+                  cd ..
+                  rm -rf "$TEMP_DIR"
+                  continue
+                }
+                git push origin "$HEAL_BRANCH" || {
+                  echo "   Push failed"
+                  cd ..
+                  rm -rf "$TEMP_DIR"
+                  continue
+                }
+                PR_BODY="## Summary\\nAuto-healed CI failures.\\n- $WF_NAME\\n- Run: https://github.com/$FULL/actions/runs/$RUN_ID\\n$FIX_SUMMARY\\n---\\nGenerated by CI Auto-Heal"
+                gh pr create -R "$FULL" \\
+                  --title "chore: auto-heal CI failures ($WF_NAME)" \\
+                  --body "$PR_BODY" \\
+                  --base "$DEFAULT_BRANCH" \\
+                  --head "$HEAL_BRANCH" 2>/dev/null || true
+                echo "   Created PR for $WF_NAME"
+                HEAL_COUNT=$((HEAL_COUNT + 1))
+              else
+                echo "   Could not auto-heal $WF_NAME"
+                ISSUE_TITLE="🚨 CI failure: $WF_NAME"
+                EXISTING=$(gh issue list -R "$FULL" --search "$ISSUE_TITLE" --json number --jq 'length' 2>/dev/null || echo "0")
+                if [ "$EXISTING" -eq 0 ]; then
+                  ISSUE_BODY="## CI Failure\\nWorkflow **\\`$WF_NAME\\`** failed and could not be auto-healed.\\n- Run: https://github.com/$FULL/actions/runs/$RUN_ID\\n- Branch: \\`$BRANCH\\`"
+                  gh issue create -R "$FULL" \\
+                    --title "$ISSUE_TITLE" \\
+                    --body "$ISSUE_BODY" 2>/dev/null || true
+                  echo "   Created issue for $WF_NAME"
+                  ISSUE_COUNT=$((ISSUE_COUNT + 1))
+                else
+                  echo "   Issue already exists"
+                fi
+              fi
+              cd ..
+              rm -rf "$TEMP_DIR"
+            done
+          done
+          echo ""
+          echo "========================================"
+          echo "CI Auto-Heal Summary"
+          echo "========================================"
+          echo "PRs created: $HEAL_COUNT"
+          echo "Issues created: $ISSUE_COUNT"
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🚨 CI Auto-Heal failed: ${context.runId}`,
+                body: `CI Auto-Heal workflow failed to complete. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`,
+                labels: ['ci-health']
+              });
+            } catch (e) {
+              core.warning(`Could not create issue: ${e.message}`);
+            }

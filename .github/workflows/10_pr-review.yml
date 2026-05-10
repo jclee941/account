@@ -18,8 +18,8 @@ permissions:
   issues: write
 
 concurrency:
-  group: pr-review-${{ github.event.pull_request.number }}-${{ matrix.model }}
-cancel-in-progress: true
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   pr_review:
@@ -176,6 +176,7 @@ jobs:
               try:
                   resp = await litellm.acompletion(
                       model="${{ matrix.model }}",
+                      custom_llm_provider="openai",
                       messages=[{"role": "user", "content": "say pong"}],
                       api_key=api_key,
                       api_base=api_base,
@@ -235,9 +236,13 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.create({
+            try {
+              await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `🚨 PR Review failed for PR #${{ github.event.pull_request.number }}`
+              title: `🚨 PR Review failed for PR #${{ github.event.pull_request.number }}`,
               body: `PR Review workflow failed for PR #${{ github.event.pull_request.number }}. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
-            });
+              });
+            } catch (e) {
+              core.warning(`Could not create issue: ${e.message}`);
+            }
