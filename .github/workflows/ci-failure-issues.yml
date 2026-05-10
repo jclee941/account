@@ -100,9 +100,13 @@ jobs:
           if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
             PR_NUMBER="0"
           fi
-          if [[ "$CONCLUSION" != "success" && "$CONCLUSION" != "failure" ]]; then
-            echo "::error::Invalid conclusion: $CONCLUSION (must be success or failure)"
+          if [[ "$CONCLUSION" != "success" && "$CONCLUSION" != "failure" && "$CONCLUSION" != "cancelled" && "$CONCLUSION" != "skipped" ]]; then
+            echo "::error::Invalid conclusion: $CONCLUSION (must be success, failure, cancelled, or skipped)"
             exit 1
+          fi
+          # For cancelled/skipped, treat as failure for issue creation purposes
+          if [[ "$CONCLUSION" == "cancelled" || "$CONCLUSION" == "skipped" ]]; then
+            CONCLUSION="failure"
           fi
 
           {

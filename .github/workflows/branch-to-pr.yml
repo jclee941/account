@@ -67,13 +67,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+        env:
+          INPUT_BRANCH: ${{ inputs.branch }}
+          INPUT_BASE: ${{ inputs.base }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
           set -eu
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BRANCH="${{ inputs.branch }}"
-            BASE="${{ inputs.base }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            BRANCH="$INPUT_BRANCH"
+            BASE="$INPUT_BASE"
           else
             BRANCH="${GITHUB_REF#refs/heads/}"
-            BASE="${{ github.event.repository.default_branch }}"
+            BASE="$DEFAULT_BRANCH"
           fi
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
