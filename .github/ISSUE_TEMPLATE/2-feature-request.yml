@@ -1,0 +1,55 @@
+name: ✨ Feature request
+description: Propose a new capability or workflow enhancement
+title: "feat: <short summary>"
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What user-facing problem does this feature solve? Skip generic justifications.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Concrete description of the feature, including expected behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you considered and why you rejected them.
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope / non-goals
+      description: Explicitly list what is OUT of scope for this request.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority (self-assessed)
+      options:
+        - P0 - Blocker
+        - P1 - High
+        - P2 - Medium
+        - P3 - Low / Nice-to-have
+      default: 2
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues and confirmed this is not a duplicate.
+          required: true
+        - label: This is a single, focused proposal (not a bundle of unrelated requests).
+          required: true

@@ -1,0 +1,60 @@
+name: 🔒 Security report
+description: Report a security-relevant issue (do NOT use for active vulnerabilities — see private channel below)
+title: "security: <short summary>"
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > ⚠️ **DO NOT report active, exploitable vulnerabilities here.**
+        > Open a private security advisory at
+        > https://github.com/jclee941/.github/security/advisories/new
+        > or contact the repo owner directly.
+        >
+        > This template is for *general* security observations: hardening
+        > suggestions, supply-chain hygiene, dependency drift, etc.
+
+  - type: textarea
+    id: observation
+    attributes:
+      label: Observation
+      description: What did you observe? Include affected file paths and line numbers.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity (CVSS-3.1 self-assessed)
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+        - Informational
+      default: 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who or what is affected and how?
+    validations:
+      required: true
+
+  - type: textarea
+    id: remediation
+    attributes:
+      label: Suggested remediation
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: This issue does NOT describe an active, exploitable vulnerability.
+          required: true
+        - label: I have NOT included secrets, tokens, or sensitive PII in this report.
+          required: true
