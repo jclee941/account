@@ -233,9 +233,13 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.create({
+            try {
+              await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `🚨 ${{ github.workflow }} failed: ${context.runId}`,
               body: `${{ github.workflow }} workflow failed. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
-            });
+              });
+            } catch (e) {
+              core.warning(`Could not create issue: ${e.message}`);
+            }

@@ -23,6 +23,5 @@ concurrency:
 jobs:
   docs-sync:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
-    timeout-minutes: 15
-    uses: jclee941/.github/.github/workflows/reusable-docs-sync.yml@master
+    uses: jclee941/.github/.github/workflows/42_reusable-docs-sync.yml@master
     secrets: inherit

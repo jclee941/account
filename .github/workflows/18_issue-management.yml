@@ -19,8 +19,5 @@ concurrency:
 jobs:
   issue-management:
     if: github.event_name != 'push'
-    timeout-minutes: 15
-    uses: jclee941/.github/.github/workflows/reusable-issue-management.yml@master
-    secrets: inherit
-    uses: jclee941/.github/.github/workflows/reusable-issue-management.yml@master
+    uses: jclee941/.github/.github/workflows/43_reusable-issue-management.yml@master
     secrets: inherit
