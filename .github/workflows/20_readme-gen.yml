@@ -82,6 +82,13 @@ jobs:
           git add README.md
           git commit -m "docs: auto-update README.md [skip ci]"
           gh auth setup-git
+          git push origin --delete bot/auto-readme-update || true
+          git push -u origin bot/auto-readme-update
+          git config user.name "github-bot"
+          git checkout -b bot/auto-readme-update
+          git add README.md
+          git commit -m "docs: auto-update README.md [skip ci]"
+          gh auth setup-git
           git push -u origin bot/auto-readme-update --force-with-lease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
