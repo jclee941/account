@@ -27,6 +27,8 @@ jobs:
   dependabot:
     if: ${{ github.actor == 'dependabot[bot]' && github.event.pull_request.draft == false }}
     runs-on: ${{ github.event.repository.private && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
     steps:
       - name: Fetch Dependabot metadata
         id: meta
