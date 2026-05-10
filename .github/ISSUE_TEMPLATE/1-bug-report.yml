@@ -1,0 +1,71 @@
+name: 🐛 Bug report
+description: Report a reproducible bug or unexpected behavior
+title: "bug: <short summary>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in every section so the issue can be triaged efficiently.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing what is broken.
+      placeholder: e.g. `pr-review.yml` workflow exits 0 even when the LLM call fails.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Exact steps that reliably reproduce the bug.
+      placeholder: |
+        1. Open a PR in jclee941/<repo>
+        2. Wait for `PR Review (CLIProxyAPI)` workflow to run
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include workflow run URLs, log excerpts, or screenshots when available.
+    validations:
+      required: true
+
+  - type: input
+    id: workflow_run
+    attributes:
+      label: Affected workflow run URL (if any)
+      placeholder: https://github.com/jclee941/<repo>/actions/runs/<id>
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Repo, default branch, runner OS, relevant tool versions
+      value: |
+        - Repo:
+        - Default branch:
+        - Runner: ubuntu-latest
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues and confirmed this is not a duplicate.
+          required: true
+        - label: I have NOT included secrets, tokens, or PII in this report.
+          required: true
