@@ -12,6 +12,10 @@ permissions:
   issues: write
   contents: read
 
+concurrency:
+  group: issue-management
+  cancel-in-progress: false
+
 jobs:
   issue-management:
     if: github.event_name != 'push'
