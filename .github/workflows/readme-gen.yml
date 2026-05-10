@@ -1,0 +1,109 @@
+name: README Generator
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+  # Weekly auto-generation (Sundays 00:00 UTC)
+  schedule:
+    - cron: '0 0 * * 0'
+  # Trigger when source/config files change on master
+  push:
+    branches: [master, main]
+    paths-ignore:
+      - 'README.md'
+      - '.github/workflows/readme-gen.yml'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: readme-gen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate_readme:
+    if: github.repository != 'jclee941/.github'  # skip source repo
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    name: Generate README.md via CLIProxyAPI
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Check out readme generator script
+        uses: actions/checkout@v6
+        with:
+          repository: jclee941/.github
+          ref: master
+          path: _bot-scripts
+          sparse-checkout: |
+            scripts/generate_readme.py
+          fetch-depth: 1
+
+      - name: Generate README.md
+        env:
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          OPENAI_BASE_URL: https://cliproxy.jclee.me/v1
+        run: |
+          set -e
+          python3 _bot-scripts/scripts/generate_readme.py --repo .
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet README.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes to README.md"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "README.md changed"
+          fi
+
+      - name: Commit and push to branch
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          set -e
+          git config user.email "bot@jclee.me"
+          git config user.name "github-bot"
+          git checkout -b bot/auto-readme-update
+          git add README.md
+          git commit -m "docs: auto-update README.md [skip ci]"
+          gh auth setup-git
+          git push -u origin bot/auto-readme-update --force-with-lease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create or update PR
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          set -e
+          existing=$(gh pr list --head bot/auto-readme-update --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "docs: auto-update README.md" --body "Automated README.md update by jclee-bot."
+          else
+            gh pr create \
+              --title "docs: auto-update README.md" \
+              --body "Automated README.md update by jclee-bot." \
+              --base "${GITHUB_REF_NAME}" \
+              --head bot/auto-readme-update
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          set -e
+          pr_number=$(gh pr list --head bot/auto-readme-update --json number --jq '.[0].number')
+          gh pr merge "$pr_number" --auto --squash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
