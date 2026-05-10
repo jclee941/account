@@ -1,0 +1,82 @@
+name: Bot Auto-Fix
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - '.github/**'
+      - 'scripts/**'
+      - '.ls-lint.yml'
+      - 'docs/**'
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: bot-auto-fix-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-fix:
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != github.event.repository.default_branch &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GH_PAT || github.token }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.21'
+
+      - name: Run naming validator with --fix
+        id: fix
+        run: |
+          echo "Running validate-naming --fix..."
+          cd scripts
+          go run ./cmd/validate-naming --fix || true
+          echo "Done"
+
+      - name: Check if fixes were applied
+        id: check
+        run: |
+          if git diff --quiet; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No auto-fixes needed"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Auto-fixes applied"
+            git diff --stat
+          fi
+
+      - name: Push fixes back to PR
+        if: steps.check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+
+          if [ -z "$BRANCH" ] || [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
+            echo "::error::Refusing to push to default branch"
+            exit 1
+          fi
+
+          git config user.email "bot@jclee.me"
+          git config user.name "github-bot"
+          git add -A
+          git commit -m "bot: auto-fix naming conventions [skip ci]"
+          git push origin "HEAD:${BRANCH}"
