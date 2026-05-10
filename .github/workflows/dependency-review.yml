@@ -31,3 +31,14 @@ jobs:
           fail-on-severity: moderate
           vulnerability-check: true
           license-check: false
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 ${{ github.workflow }} failed: ${context.runId}`,
+              body: `${{ github.workflow }} workflow failed. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
+            });
