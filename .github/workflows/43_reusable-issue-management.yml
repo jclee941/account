@@ -49,7 +49,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Auto-label new issues
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const issue = context.payload.issue;
@@ -105,7 +105,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Remove stale label on activity
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const issue = context.payload.issue || context.payload.comment?.issue;
@@ -132,7 +132,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Generate Issue Statistics
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { data: issues } = await github.rest.issues.listForRepo({
@@ -201,7 +201,7 @@ jobs:
               }
       - name: Notify on failure
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             try {
