@@ -1,0 +1,82 @@
+name: Reusable Gitleaks
+
+# Reusable workflow for secret-pattern scanning. Called by 05_gitleaks.yml.
+#
+# Why this exists:
+#   GitHub's branch protection 'required_status_checks' context is
+#   '<caller workflow name> / <called job key>'. By moving the actual scan
+#   into a reusable workflow called from 05_gitleaks.yml (workflow name
+#   'Gitleaks'), the check-run renders as 'Gitleaks / scan' which matches
+#   the branch protection contract deployed fleet-wide.
+#
+# Scope:
+#   - PR scans: scans the PR commit range (${baseRef}^..${headRef}).
+#     Reports leaks introduced by commits in this PR.
+#   - Push scans: scans the new tip's reachable history.
+#
+# fetch-depth: 0 is REQUIRED for both events because gitleaks references PR
+# commits by explicit SHA; shallow clones break multi-commit PR scans.
+#
+# Baseline: a repo-local .gitleaks.toml at the repository root is auto-
+# detected by the gitleaks CLI. Do NOT set GITLEAKS_CONFIG to a path that
+# might not exist - that hard-fails the action across all downstream repos.
+# When deploying to a downstream repo with pre-existing historical findings,
+# add a .gitleaksignore (one fingerprint per line) instead of blocking the
+# required check.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  scan:
+    # Gitleaks does not need self-hosted resources; ubuntu-latest avoids
+    # install failures on self-hosted runners.
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Clean stale gitleaks temp
+        run: |
+          rm -rf /tmp/gitleaks.tmp /tmp/gitleaks-8.24.3
+
+      - name: Install gitleaks
+        run: |
+          set -eu
+          wget -qO /tmp/gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf /tmp/gitleaks.tar.gz -C "$HOME/.local/bin" gitleaks
+          chmod +x "$HOME/.local/bin/gitleaks"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run gitleaks detect
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            echo "Scanning PR commits: ${BASE_SHA}^..${HEAD_SHA}"
+            gitleaks detect --source . --log-opts "${BASE_SHA}^..${HEAD_SHA}" --redact --verbose --exit-code 1
+          else
+            echo "Scanning full repository"
+            gitleaks detect --source . --redact --verbose --exit-code 1
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Notify on failure
+        if: failure()
+        uses: ./.github/actions/notify-on-failure
+        with:
+          title: '🚨 Gitleaks Scan Failed: ${{ github.run_id }}'

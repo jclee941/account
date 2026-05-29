@@ -20,5 +20,5 @@ jobs:
     # because conventional commit titles and feat/fix/chore branch names
     # are its default behavior.
     if: github.event_name == 'pull_request'
-    uses: jclee941/.github/.github/workflows/44_reusable-pr-checks.yml@master
+    uses: ./.github/workflows/44_reusable-pr-checks.yml
     secrets: inherit

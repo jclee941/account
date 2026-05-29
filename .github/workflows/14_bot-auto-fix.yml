@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: bot-auto-fix-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   auto-fix:
@@ -48,6 +48,7 @@ jobs:
       - name: Run naming validator with --fix
         id: fix
         run: |
+          set -eu
           echo "Running validate-naming --fix..."
           if [ ! -d "scripts" ]; then
             echo "No scripts directory found, skipping"
@@ -60,6 +61,7 @@ jobs:
       - name: Check if fixes were applied
         id: check
         run: |
+          set -eu
           if git diff --quiet; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "No auto-fixes needed"
@@ -77,8 +79,7 @@ jobs:
           BRANCH: ${{ github.event.pull_request.head.ref }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          BRANCH="${BRANCH}"
-          DEFAULT_BRANCH="${DEFAULT_BRANCH}"
+          set -eu
           if [ -z "$BRANCH" ] || [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
             echo "::error::Refusing to push to default branch"
             exit 1
@@ -91,16 +92,4 @@ jobs:
           echo "Pushed fixes to ${BRANCH}"
       - name: Notify on failure
         if: failure()
-        uses: actions/github-script@v9
-        with:
-          script: |
-            try {
-              await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `🚨 ${{ github.workflow }} failed: ${context.runId}`,
-              body: `${{ github.workflow }} workflow failed. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
-              });
-            } catch (e) {
-              core.warning(`Could not create issue: ${e.message}`);
-            }
+        uses: ./.github/actions/notify-on-failure

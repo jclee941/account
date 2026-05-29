@@ -104,7 +104,13 @@ jobs:
       - name: Open draft PR
         if: steps.meta.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use GH_PAT (falls back to GITHUB_TOKEN) so the created PR triggers
+          # downstream 'pull_request' workflows. PRs opened with the default
+          # GITHUB_TOKEN do NOT fire other workflows (GitHub's recursion guard),
+          # which left required checks (pr-checks, Gitleaks) never running and
+          # auto-merge permanently BLOCKED. With a PAT the checks run and
+          # auto-merge actually fires.
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           BRANCH: ${{ steps.meta.outputs.branch }}
           BASE: ${{ steps.meta.outputs.base }}
           ISSUE_NUM: ${{ steps.meta.outputs.issue_number }}
@@ -139,18 +145,20 @@ jobs:
             --body "$BODY" \
             --label "auto-merge" \
             || echo "::warning::PR creation failed (likely already exists or no diff yet)"
+
+          # Enable auto-merge (squash) so the PR merges itself once all required
+          # branch protection checks pass. Branch-to-PR runs only on human pushes
+          # (workflow skips jclee-bot and github-actions[bot] actors), so the
+          # actual change author is human even though the PR author is
+          # github-actions[bot]. Without this step, 13_pr-auto-merge.yml skips
+          # bot-authored PRs and the PR never merges automatically.
+          PR_URL=$(gh pr view "$BRANCH" --repo "$GITHUB_REPOSITORY" --json url --jq .url 2>/dev/null || echo "")
+          if [ -n "$PR_URL" ]; then
+            gh pr merge --auto --squash "$PR_URL" \
+              || echo "::warning::auto-merge enable failed (allow_auto_merge disabled, branch protection mismatch, or PR already merged)"
+          else
+            echo "::warning::could not resolve PR URL for $BRANCH; auto-merge not enabled"
+          fi
       - name: Notify on failure
         if: failure()
-        uses: actions/github-script@v9
-        with:
-          script: |
-            try {
-              await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `🚨 ${{ github.workflow }} failed: ${context.runId}`,
-              body: `${{ github.workflow }} workflow failed. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
-              });
-            } catch (e) {
-              core.warning(`Could not create issue: ${e.message}`);
-            }
+        uses: ./.github/actions/notify-on-failure

@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: readme-gen-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   generate_readme:
@@ -64,6 +64,7 @@ jobs:
       - name: Check for changes
         id: diff
         run: |
+          set -eu
           if git diff --quiet README.md; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No changes to README.md"
@@ -120,16 +121,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Notify on failure
         if: failure()
-        uses: actions/github-script@v9
-        with:
-          script: |
-            try {
-              await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `🚨 ${{ github.workflow }} failed: ${context.runId}`,
-              body: `${{ github.workflow }} workflow failed. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
-              });
-            } catch (e) {
-              core.warning(`Could not create issue: ${e.message}`);
-            }
+        uses: ./.github/actions/notify-on-failure
