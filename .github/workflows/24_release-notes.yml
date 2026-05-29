@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: release-notes-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   generate:
@@ -36,6 +36,7 @@ jobs:
       - name: Generate Release Notes
         id: notes
         run: |
+          set -eu
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           PREVIOUS_TAG=$(git tag --sort=-creatordate | grep -v "$TAG" | head -n 1)
           
@@ -45,8 +46,10 @@ jobs:
             RANGE="$PREVIOUS_TAG..$TAG"
           fi
           
-          echo "## What's Changed in $TAG" > release_notes.md
-          echo "" >> release_notes.md
+          {
+            echo "## What's Changed in $TAG"
+            echo ""
+          } > release_notes.md
           
           # Categorize commits
           FEATS=$(git log --pretty=format:"- %s (%h)" "$RANGE" --grep="^feat" 2>/dev/null || true)
@@ -56,33 +59,43 @@ jobs:
           CHORES=$(git log --pretty=format:"- %s (%h)" "$RANGE" --grep="^chore" 2>/dev/null || true)
           
           if [ -n "$FEATS" ]; then
-            echo "### ✨ Features" >> release_notes.md
-            echo "$FEATS" >> release_notes.md
-            echo "" >> release_notes.md
+            {
+              echo "### ✨ Features"
+              echo "$FEATS"
+              echo ""
+            } >> release_notes.md
           fi
           
           if [ -n "$FIXES" ]; then
-            echo "### 🐛 Bug Fixes" >> release_notes.md
-            echo "$FIXES" >> release_notes.md
-            echo "" >> release_notes.md
+            {
+              echo "### 🐛 Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            } >> release_notes.md
           fi
           
           if [ -n "$DOCS" ]; then
-            echo "### 📚 Documentation" >> release_notes.md
-            echo "$DOCS" >> release_notes.md
-            echo "" >> release_notes.md
+            {
+              echo "### 📚 Documentation"
+              echo "$DOCS"
+              echo ""
+            } >> release_notes.md
           fi
           
           if [ -n "$REFACTORS" ]; then
-            echo "### 🔧 Refactoring" >> release_notes.md
-            echo "$REFACTORS" >> release_notes.md
-            echo "" >> release_notes.md
+            {
+              echo "### 🔧 Refactoring"
+              echo "$REFACTORS"
+              echo ""
+            } >> release_notes.md
           fi
           
           if [ -n "$CHORES" ]; then
-            echo "### 🧹 Maintenance" >> release_notes.md
-            echo "$CHORES" >> release_notes.md
-            echo "" >> release_notes.md
+            {
+              echo "### 🧹 Maintenance"
+              echo "$CHORES"
+              echo ""
+            } >> release_notes.md
           fi
           
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREVIOUS_TAG...$TAG" >> release_notes.md
@@ -91,14 +104,17 @@ jobs:
           
           # Set output for next step
           BODY=$(cat release_notes.md)
-          echo "body<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$BODY" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          {
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create or Update Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -eu
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           BODY="${{ steps.notes.outputs.body }}"
           
@@ -114,16 +130,4 @@ jobs:
           fi
       - name: Notify on failure
         if: failure()
-        uses: actions/github-script@v9
-        with:
-          script: |
-            try {
-              await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `🚨 ${{ github.workflow }} failed: ${context.runId}`,
-              body: `${{ github.workflow }} workflow failed. See [run logs](${context.payload.repository.html_url}/actions/runs/${context.runId}).`
-              });
-            } catch (e) {
-              core.warning(`Could not create issue: ${e.message}`);
-            }
+        uses: ./.github/actions/notify-on-failure
