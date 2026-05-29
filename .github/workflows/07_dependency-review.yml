@@ -31,7 +31,7 @@ jobs:
         # `warn-only` can apply. See repo Settings → Security and
         # analysis → Dependency graph; drop continue-on-error once on.
         continue-on-error: true
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         with:
           comment-summary-in-pr: true
           fail-on-severity: moderate
