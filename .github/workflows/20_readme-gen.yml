@@ -11,7 +11,7 @@ on:
     branches: [master, main]
     paths-ignore:
       - 'README.md'
-      - '.github/workflows/readme-gen.yml'
+      - '.github/workflows/20_readme-gen.yml'
 
 permissions:
   contents: write
@@ -23,7 +23,6 @@ concurrency:
 
 jobs:
   generate_readme:
-    if: github.repository != 'jclee941/.github'  # skip source repo
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     name: Generate README.md via CLIProxyAPI
     timeout-minutes: 10
@@ -58,7 +57,7 @@ jobs:
           CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
           OPENAI_BASE_URL: https://cliproxy.jclee.me/v1
         run: |
-          set -e
+          set -eu
           python3 _bot-scripts/scripts/generate_readme.py --repo .
 
       - name: Check for changes
@@ -76,15 +75,8 @@ jobs:
       - name: Commit and push to branch
         if: steps.diff.outputs.changed == 'true'
         run: |
-          set -e
+          set -eu
           git config user.email "bot@jclee.me"
-          git config user.name "github-bot"
-          git checkout -b bot/auto-readme-update
-          git add README.md
-          git commit -m "docs: auto-update README.md [skip ci]"
-          gh auth setup-git
-          git push origin --delete bot/auto-readme-update || true
-          git push -u origin bot/auto-readme-update
           git config user.name "github-bot"
           git checkout -b bot/auto-readme-update
           git add README.md
@@ -97,7 +89,7 @@ jobs:
       - name: Create or update PR
         if: steps.diff.outputs.changed == 'true'
         run: |
-          set -e
+          set -eu
           existing=$(gh pr list --head bot/auto-readme-update --json number --jq '.[0].number')
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --title "docs: auto-update README.md" --body "Automated README.md update by jclee-bot."
@@ -114,7 +106,7 @@ jobs:
       - name: Enable auto-merge
         if: steps.diff.outputs.changed == 'true'
         run: |
-          set -e
+          set -eu
           pr_number=$(gh pr list --head bot/auto-readme-update --json number --jq '.[0].number')
           gh pr merge "$pr_number" --auto --squash
         env:

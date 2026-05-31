@@ -21,7 +21,7 @@ jobs:
   pr_review:
     strategy:
       matrix:
-        model: [kimi-k2.6, minimax-m2.7, gpt-5.5]
+        model: [minimax-m2.7, gpt-5.5]
       fail-fast: false
     concurrency:
       group: pr-review-${{ github.event.pull_request.number }}-${{ matrix.model }}
@@ -36,6 +36,12 @@ jobs:
         uses: step-security/harden-runner@v2
         with:
           egress-policy: audit
+      - name: Checkout local actions
+        uses: actions/checkout@v6
+        with:
+          repository: jclee941/.github
+          ref: master
+          fetch-depth: 1
       - name: Check out pr-agent source from jclee941/.github
         uses: actions/checkout@v6
         with:
@@ -118,10 +124,10 @@ jobs:
           LITELLM_LOCAL_MODEL_COST_MAP: "True"
           PR_REVIEW_DEBUG: ${{ vars.PR_REVIEW_DEBUG || '0' }}
           CONFIG__MODEL: ${{ matrix.model }}
-          # Canonical fallback chain (matches .pr_agent.toml, 40_repo-review-batch,
-          # 86_pr-review-security, configuration.toml). litellm skips the matrix.model
-          # if it already failed as primary, so listing it here is harmless.
-          CONFIG__FALLBACK_MODELS: '["kimi-k2.5", "minimax-m2.7"]'
+          # Canonical fallback chain (matches .pr_agent.toml + configuration.toml +
+          # all review workflows; enforced by 90_sanity.yml). litellm skips the
+          # matrix.model if it already failed as primary, so listing it is harmless.
+          CONFIG__FALLBACK_MODELS: '["minimax-m2.7", "gpt-5.5"]'
           CONFIG__RESPONSE_LANGUAGE: ko
           CONFIG__AI_TIMEOUT: "180"
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
@@ -231,25 +237,6 @@ jobs:
           .venv/bin/python scripts/pr_review_runner.py "$PR_URL"
       - name: Notify on failure
         if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NOTIFY_TITLE: 'PR Review failed for PR #${{ github.event.pull_request.number }}'
-        run: |
-          set -eu
-          SHORT_SHA="${GITHUB_SHA:0:8}"
-          TITLE="${NOTIFY_TITLE:-[ci-fail] $GITHUB_WORKFLOW @ $SHORT_SHA}"
-          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" \
-            --state open --label ci-failure \
-            --json number,title \
-            --jq ".[] | select(.title == \"$TITLE\") | .number" 2>/dev/null | head -1 || true)
-          if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" \
-              --body "Another failure: $RUN_URL" || true
-          else
-            gh label create ci-failure --color B60205 2>/dev/null || true
-            gh issue create --repo "$GITHUB_REPOSITORY" \
-              --title "$TITLE" \
-              --body "$GITHUB_WORKFLOW workflow failed on \`$GITHUB_SHA\`. See [run logs]($RUN_URL)." \
-              --label ci-failure || true
-          fi
+        uses: ./.github/actions/notify-on-failure
+        with:
+          title: 'PR Review failed for PR #${{ github.event.pull_request.number }}'

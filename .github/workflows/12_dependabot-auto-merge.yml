@@ -119,6 +119,35 @@ jobs:
           echo "::error::failed to enable auto-merge for $PR_URL"
           exit "$status"
 
+      - name: Self-heal stale BLOCKED PR
+        # When auto-merge is enabled and all checks pass but GitHub still
+        # reports mergeStateStatus=BLOCKED, the PR's base is stale: it was
+        # opened against an older default-branch tip whose workflows produced
+        # a now-renamed required check (e.g. bare 'scan' vs 'Gitleaks / scan').
+        # Updating the branch re-runs current workflows and clears the block.
+        # We never use --admin; branch protection is still enforced.
+        if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.package-ecosystem == 'github_actions' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          state="$(gh pr view "$PR_URL" --json mergeStateStatus,statusCheckRollup \
+            --jq '.mergeStateStatus')"
+          failed="$(gh pr view "$PR_URL" --json statusCheckRollup \
+            --jq '[.statusCheckRollup[]? | select((.conclusion // .state) == "FAILURE")] | length')"
+          if [[ "$state" == "BLOCKED" && "$failed" == "0" ]]; then
+            echo "::notice::PR $PR_URL is BLOCKED with no failing checks; updating branch to clear stale required-context drift"
+            # gh CLI on the runner may predate the `gh pr update-branch`
+            # subcommand, so call the REST endpoint directly.
+            gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/update-branch" \
+              || echo "::warning::update-branch failed (already up to date, conflict, or not permitted); not retrying"
+          else
+            echo "::notice::PR $PR_URL mergeStateStatus=$state failed=$failed; no self-heal needed"
+          fi
+
       - name: Flag major updates for manual review
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-major' && steps.meta.outputs.package-ecosystem != 'github_actions' }}
         env:
