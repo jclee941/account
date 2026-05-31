@@ -60,6 +60,15 @@ jobs:
           set -eu
           python3 _bot-scripts/scripts/generate_readme.py --repo .
 
+      - name: Normalize generated README (markdownlint --fix)
+        # Use the SAME markdownlint-cli version + .markdownlint.json config that
+        # 42_reusable-docs-sync.yml enforces, so the generated README passes the
+        # Documentation Sync 'markdown-lint' check instead of failing it.
+        run: |
+          set -eu
+          npm install -g markdownlint-cli@0.43.0
+          markdownlint --fix --config .markdownlint.json README.md || true
+
       - name: Check for changes
         id: diff
         run: |
