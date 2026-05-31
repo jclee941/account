@@ -205,6 +205,7 @@ jobs:
                   body: body
                 });
               }
+            }
       - name: Notify on failure
         if: failure()
         uses: ./.github/actions/notify-on-failure
