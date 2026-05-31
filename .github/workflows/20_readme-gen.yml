@@ -78,13 +78,23 @@ jobs:
           set -eu
           git config user.email "bot@jclee.me"
           git config user.name "github-bot"
-          git checkout -b bot/auto-readme-update
+          # Re-create the bot branch from the freshly generated state.
+          # checkout -B is idempotent across repeated runs (fixed branch name),
+          # and --force below handles both the first run (no remote branch yet)
+          # and re-runs (existing remote branch) without a 'stale info' lease
+          # error. This is a bot-owned branch with the bot as sole writer, and
+          # the workflow concurrency group serialises runs, so --force is safe.
+          git checkout -B bot/auto-readme-update
           git add README.md
-          git commit -m "docs: auto-update README.md [skip ci]"
+          # No [skip ci]: the PR needs its required checks to run so auto-merge
+          # can be satisfied.
+          git commit -m "docs: auto-update README.md"
           gh auth setup-git
-          git push -u origin bot/auto-readme-update --force-with-lease
+          git push -u origin bot/auto-readme-update --force
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GH_PAT (not GITHUB_TOKEN) so the pushed branch triggers PR checks and
+          # auto-merge can fire.
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Create or update PR
         if: steps.diff.outputs.changed == 'true'
@@ -101,7 +111,7 @@ jobs:
               --head bot/auto-readme-update
           fi
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Enable auto-merge
         if: steps.diff.outputs.changed == 'true'
@@ -110,7 +120,7 @@ jobs:
           pr_number=$(gh pr list --head bot/auto-readme-update --json number --jq '.[0].number')
           gh pr merge "$pr_number" --auto --squash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
       - name: Notify on failure
         if: failure()
         uses: ./.github/actions/notify-on-failure
