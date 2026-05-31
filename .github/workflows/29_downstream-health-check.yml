@@ -29,18 +29,20 @@ jobs:
         uses: step-security/harden-runner@v2
         with:
           egress-policy: audit
-      - name: Checkout repository inventory
-        uses: actions/checkout@v6
-        with:
-          repository: jclee941/.github
-          path: .github-inventory
-
+      # Default-path checkout MUST come first: actions/checkout cleans the
+      # workspace root, which would wipe a previously-checked-out subdir.
       - name: Checkout local actions
         uses: actions/checkout@v6
         with:
           repository: jclee941/.github
           ref: master
           fetch-depth: 1
+
+      - name: Checkout repository inventory
+        uses: actions/checkout@v6
+        with:
+          repository: jclee941/.github
+          path: .github-inventory
 
       - name: Check latest workflow runs across all repos
         id: health
