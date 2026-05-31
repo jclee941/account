@@ -35,10 +35,17 @@ jobs:
           repository: jclee941/.github
           path: .github-inventory
 
+      - name: Checkout local actions
+        uses: actions/checkout@v6
+        with:
+          repository: jclee941/.github
+          ref: master
+          fetch-depth: 1
+
       - name: Check latest workflow runs across all repos
         id: health
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
           set -u
 
@@ -76,7 +83,8 @@ jobs:
       - name: Create or update health-check issue
         if: steps.health.outputs.failures_found == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          DETAILS: ${{ steps.health.outputs.details }}
         run: |
           set -u
 
@@ -89,7 +97,7 @@ jobs:
             echo ""
             echo "The following critical workflows have non-success conclusions in downstream repos:"
             echo ""
-            awk '/^details=<<EOF$/{p=1;next} /^EOF$/{p=0} p' "$GITHUB_OUTPUT"
+            printf '%s\n' "$DETAILS"
             echo ""
             echo "---"
             echo ""
@@ -118,7 +126,7 @@ jobs:
       - name: Close health-check issue if all green
         if: steps.health.outputs.failures_found == 'false'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
           set -u
 
@@ -134,24 +142,4 @@ jobs:
           fi
       - name: Notify on failure
         if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eu
-          SHORT_SHA="${GITHUB_SHA:0:8}"
-          TITLE="[ci-fail] $GITHUB_WORKFLOW @ $SHORT_SHA"
-          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" \
-            --state open --label ci-failure \
-            --json number,title \
-            --jq ".[] | select(.title == \"$TITLE\") | .number" 2>/dev/null | head -1 || true)
-          if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" \
-              --body "Another failure: $RUN_URL" || true
-          else
-            gh label create ci-failure --color B60205 2>/dev/null || true
-            gh issue create --repo "$GITHUB_REPOSITORY" \
-              --title "$TITLE" \
-              --body "$GITHUB_WORKFLOW workflow failed on \`$GITHUB_SHA\`. See [run logs]($RUN_URL)." \
-              --label ci-failure || true
-          fi
+        uses: ./.github/actions/notify-on-failure

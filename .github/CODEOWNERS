@@ -18,8 +18,8 @@
 
 # Security-sensitive
 /.github/workflows/security/        @jclee941
-/.github/workflows/codeql.yml       @jclee941
-/.github/workflows/gitleaks.yml     @jclee941
+/.github/workflows/06_codeql.yml    @jclee941
+/.github/workflows/05_gitleaks.yml  @jclee941
 /.github/CODEOWNERS                 @jclee941
 
 # Docs / templates
