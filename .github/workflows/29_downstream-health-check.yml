@@ -58,7 +58,10 @@ jobs:
           for REPO in $REPOS; do
             FULL="jclee941/$REPO"
             for WF in "${WORKFLOWS[@]}"; do
-              LATEST=$(gh run list -R "$FULL" --workflow "$WF" --limit 1 --json conclusion,status,createdAt --jq '.[0]')
+              # Tolerate repos/workflows that don't exist: gh exits non-zero
+              # ("could not find any workflows named ...") which would abort the
+              # step under bash -e. Fall back to empty and skip via the check below.
+              LATEST=$(gh run list -R "$FULL" --workflow "$WF" --limit 1 --json conclusion,status,createdAt --jq '.[0]' 2>/dev/null || true)
               if [ -z "$LATEST" ] || [ "$LATEST" = "[]" ]; then
                 continue
               fi
