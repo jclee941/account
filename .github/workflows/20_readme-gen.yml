@@ -109,6 +109,11 @@ jobs:
         if: steps.diff.outputs.changed == 'true'
         run: |
           set -eu
+          # Resolve the repo default branch for the PR base. GITHUB_REF_NAME can be
+          # a ref path on some events and is wrong for downstream repos that use
+          # `main`; the default branch is always a valid base.
+          base_branch=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
+          base_branch=${base_branch:-${GITHUB_REF_NAME:-master}}
           existing=$(gh pr list --head bot/auto-readme-update --json number --jq '.[0].number')
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --title "docs: auto-update README.md" --body "Automated README.md update by jclee-bot."
@@ -116,7 +121,7 @@ jobs:
             gh pr create \
               --title "docs: auto-update README.md" \
               --body "Automated README.md update by jclee-bot." \
-              --base "${GITHUB_REF_NAME}" \
+              --base "$base_branch" \
               --head bot/auto-readme-update
           fi
         env:
