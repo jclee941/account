@@ -13,7 +13,7 @@ body:
     attributes:
       label: Summary
       description: One or two sentences describing what is broken.
-      placeholder: e.g. `pr-review.yml` workflow exits 0 even when the LLM call fails.
+      placeholder: e.g. `10_pr-review.yml` workflow exits 0 even when the LLM call fails.
     validations:
       required: true
 
