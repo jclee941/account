@@ -24,4 +24,6 @@ jobs:
   docs-sync:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     uses: jclee941/.github/.github/workflows/42_reusable-docs-sync.yml@master
+    with:
+      is_pull_request: ${{ github.event_name == 'pull_request' }}
     secrets: inherit
