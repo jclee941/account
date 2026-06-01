@@ -1,0 +1,544 @@
+name: Issue Classification
+
+# Auto-classify and process issues:
+#   * duplicate-classification  — on new/edited issues, find similar OPEN issues
+#                                 (token-Jaccard, no embeddings), label `duplicate`,
+#                                 comment with likely originals. Never auto-closes
+#                                 unless explicitly enabled with a high threshold.
+#   * resolved-from-merged-pr   — when a PR merges, label+close the issues it
+#                                 Closes/Fixes/Resolves (or `issue-N` branch).
+#   * resolved-from-signal      — on edits/comments carrying an explicit
+#                                 "fixed/resolved" signal, label `resolved`
+#                                 (close only when opted in).
+#   * resolved-sweep            — scheduled sweep: open issues whose linked PR is
+#                                 already merged get labeled/closed.
+#
+# All pure logic lives in `.github/scripts/issue-classifier.js` (unit-tested via
+# scripts/issue_classifier_js_test.py and node --check in 90_sanity.yml). This
+# workflow only performs the GitHub-side effects. `dry_run` logs the plan
+# without mutating anything.
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Log planned actions without mutating issues
+        required: false
+        type: boolean
+        default: false
+      duplicate_threshold:
+        description: Min similarity (0-1) to flag a duplicate
+        required: false
+        type: string
+        default: '0.58'
+      duplicate_close_threshold:
+        description: Min similarity (0-1) required before a duplicate may be closed
+        required: false
+        type: string
+        default: '0.86'
+      close_duplicates:
+        description: Auto-close high-confidence duplicates
+        required: false
+        type: boolean
+        default: false
+      close_resolved_by_pr:
+        description: Auto-close issues referenced by a merged PR
+        required: false
+        type: boolean
+        default: true
+      close_resolved_by_signal:
+        description: Auto-close issues with only a text resolved signal
+        required: false
+        type: boolean
+        default: false
+      max_candidates:
+        description: Max open issues scanned for duplicate detection
+        required: false
+        type: string
+        default: '100'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: issue-classification-${{ github.event.issue.number || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  DRY_RUN: ${{ inputs.dry_run || 'false' }}
+  DUPLICATE_THRESHOLD: ${{ inputs.duplicate_threshold || '0.58' }}
+  DUPLICATE_CLOSE_THRESHOLD: ${{ inputs.duplicate_close_threshold || '0.86' }}
+  CLOSE_DUPLICATES: ${{ inputs.close_duplicates || 'false' }}
+  # Default ON. Only a workflow_dispatch run that explicitly sets the input to
+  # false may disable it; on issues/PR/schedule events `inputs` is absent and we
+  # must NOT let empty-string coerce to false.
+  CLOSE_RESOLVED_BY_PR: ${{ github.event_name == 'workflow_dispatch' && inputs.close_resolved_by_pr == false && 'false' || 'true' }}
+  CLOSE_RESOLVED_BY_SIGNAL: ${{ inputs.close_resolved_by_signal || 'false' }}
+  MAX_CANDIDATES: ${{ inputs.max_candidates || '100' }}
+
+jobs:
+  duplicate-classification:
+    name: Duplicate detection
+    if: github.event_name == 'issues' && contains(fromJson('["opened", "edited", "reopened"]'), github.event.action)
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Classify duplicate issue
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const path = require('path');
+            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.js'));
+            // Ensure a label exists before adding it (avoids a 404 on repos that
+            // lack the label).
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                try {
+                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color, description });
+                } catch (ce) {
+                  if (ce.status !== 422) throw ce;
+                }
+              }
+            }
+            const cfg = classifier.parseConfig({
+              duplicate_threshold: process.env.DUPLICATE_THRESHOLD,
+              duplicate_close_threshold: process.env.DUPLICATE_CLOSE_THRESHOLD,
+              close_duplicates: process.env.CLOSE_DUPLICATES,
+              max_candidates: process.env.MAX_CANDIDATES,
+              dry_run: process.env.DRY_RUN,
+            });
+
+            const issue = context.payload.issue;
+            if (!issue || issue.pull_request) {
+              core.info('Not an issue payload; skipping.');
+              return;
+            }
+
+            const candidates = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+
+            const plan = classifier.classifyDuplicate(issue, candidates, cfg);
+            if (plan.matches.length === 0) {
+              core.info(`#${issue.number}: no duplicate candidates above threshold.`);
+              return;
+            }
+            core.info(`#${issue.number}: duplicate plan -> ${JSON.stringify(plan.matches)} (dryRun=${plan.dryRun})`);
+
+            if (plan.dryRun) {
+              core.notice(`[dry-run] would label #${issue.number} duplicate and comment.`);
+              return;
+            }
+
+            await ensureLabel('duplicate', 'cfd3d7', 'Auto-classified: possible duplicate');
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: ['duplicate'],
+            });
+
+            // Idempotency: do not repeat the duplicate comment on edits.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              per_page: 100,
+            });
+            const already = comments.some(c => c.body && c.body.includes(classifier.DUP_MARKER));
+            if (!already) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: plan.comment,
+              });
+            }
+
+            if (plan.shouldClose) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'not_planned',
+              });
+              core.notice(`Closed #${issue.number} as a high-confidence duplicate.`);
+            }
+      - name: Notify on failure
+        if: failure()
+        uses: ./.github/actions/notify-on-failure
+
+  resolved-from-merged-pr:
+    name: Resolved by merged PR
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Resolve issues linked to the merged PR
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const path = require('path');
+            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.js'));
+            const cfg = classifier.parseConfig({
+              close_resolved_by_pr: process.env.CLOSE_RESOLVED_BY_PR,
+              dry_run: process.env.DRY_RUN,
+            });
+
+            // Ensure a label exists before adding it; `resolved` is not a default
+            // GitHub label, so addLabels would otherwise 404.
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                try {
+                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color, description });
+                } catch (ce) {
+                  if (ce.status !== 422) throw ce;  // 422 = already created by a race
+                }
+              }
+            }
+
+            const pr = context.payload.pull_request;
+            const plan = classifier.classifyResolvedByPr({
+              number: pr.number,
+              title: pr.title,
+              body: pr.body,
+              head: { ref: pr.head && pr.head.ref },
+            }, cfg);
+
+            if (plan.issueNumbers.length === 0) {
+              core.info(`PR #${pr.number}: no linked issues to resolve.`);
+              return;
+            }
+            core.info(`PR #${pr.number}: resolving ${JSON.stringify(plan.issueNumbers)} (close=${plan.shouldClose}, dryRun=${plan.dryRun})`);
+
+            for (const num of plan.issueNumbers) {
+              try {
+                const { data: target } = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                });
+                if (target.pull_request) continue;          // skip PRs (not issues)
+                const alreadyClosed = target.state === 'closed';
+                // Note: GitHub auto-closes issues for Closes/Fixes/Resolves #N on
+                // merge, so the issue may ALREADY be closed here. We still want to
+                // label + comment it (classification), and only skip the close call.
+
+                if (plan.dryRun) {
+                  core.notice(`[dry-run] would resolve #${num} via PR #${pr.number} (alreadyClosed=${alreadyClosed}).`);
+                  continue;
+                }
+
+                await ensureLabel('resolved', '0e8a16', 'Auto-classified: issue resolved');
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  labels: ['resolved'],
+                });
+
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  per_page: 100,
+                });
+                const already = comments.some(c => c.body && c.body.includes(classifier.RESOLVED_MARKER));
+                if (!already) {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    body: plan.comment,
+                  });
+                }
+
+                if (plan.shouldClose && !alreadyClosed) {
+                  await github.rest.issues.update({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    state: 'closed',
+                    state_reason: 'completed',
+                  });
+                  core.notice(`Closed #${num} (resolved by merged PR #${pr.number}).`);
+                }
+              } catch (e) {
+                core.warning(`Failed to process issue #${num}: ${e.message}`);
+              }
+            }
+      - name: Notify on failure
+        if: failure()
+        uses: ./.github/actions/notify-on-failure
+
+  resolved-from-signal:
+    name: Resolved by text signal
+    if: (github.event_name == 'issues' && contains(fromJson('["edited", "reopened"]'), github.event.action)) || (github.event_name == 'issue_comment' && github.event.action == 'created')
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Detect resolved signal
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const path = require('path');
+            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.js'));
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                try {
+                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color, description });
+                } catch (ce) {
+                  if (ce.status !== 422) throw ce;
+                }
+              }
+            }
+            const cfg = classifier.parseConfig({
+              close_resolved_by_signal: process.env.CLOSE_RESOLVED_BY_SIGNAL,
+              dry_run: process.env.DRY_RUN,
+            });
+
+            const issue = context.payload.issue;
+            if (!issue || issue.pull_request) {
+              core.info('Not an issue payload; skipping.');
+              return;
+            }
+            if (issue.state === 'closed') {
+              core.info(`#${issue.number} already closed; skipping.`);
+              return;
+            }
+
+            // Consider the issue body plus the triggering comment (if any).
+            const commentBody = (context.payload.comment && context.payload.comment.body) || '';
+            const subject = {
+              title: issue.title,
+              body: `${issue.body || ''}\n${commentBody}`,
+            };
+
+            const plan = classifier.classifyResolvedBySignal(subject, cfg);
+            if (!plan.label) {
+              core.info(`#${issue.number}: no resolved signal detected.`);
+              return;
+            }
+            core.info(`#${issue.number}: resolved-signal plan (close=${plan.shouldClose}, dryRun=${plan.dryRun}).`);
+
+            if (plan.dryRun) {
+              core.notice(`[dry-run] would mark #${issue.number} resolved.`);
+              return;
+            }
+
+            await ensureLabel('resolved', '0e8a16', 'Auto-classified: issue resolved');
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: ['resolved'],
+            });
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              per_page: 100,
+            });
+            const already = comments.some(c => c.body && c.body.includes(classifier.RESOLVED_MARKER));
+            if (!already) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: plan.comment,
+              });
+            }
+
+            if (plan.shouldClose) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              core.notice(`Closed #${issue.number} (resolved signal).`);
+            }
+      - name: Notify on failure
+        if: failure()
+        uses: ./.github/actions/notify-on-failure
+
+  resolved-sweep:
+    name: Scheduled resolved sweep
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Sweep open issues linked to merged PRs
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const path = require('path');
+            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.js'));
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                try {
+                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color, description });
+                } catch (ce) {
+                  if (ce.status !== 422) throw ce;
+                }
+              }
+            }
+            const cfg = classifier.parseConfig({
+              close_resolved_by_pr: process.env.CLOSE_RESOLVED_BY_PR,
+              dry_run: process.env.DRY_RUN,
+            });
+
+            // Walk recently-merged PRs and resolve any still-open linked issues.
+            // Bound the scan to a recent window (~150 PRs) so the sweep stays cheap.
+            const prsPages = [];
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 50,
+            }, (response, done) => {
+              prsPages.push(response.data.length);
+              if (prsPages.length >= 3) {
+                done();
+              }
+              return response.data;
+            });
+
+            let processed = 0;
+            for (const pr of prs) {
+              if (!pr.merged_at) continue;
+              if (processed >= 150) break;
+              processed += 1;
+
+              const plan = classifier.classifyResolvedByPr({
+                number: pr.number,
+                title: pr.title,
+                body: pr.body,
+                head: { ref: pr.head && pr.head.ref },
+              }, cfg);
+              if (plan.issueNumbers.length === 0) continue;
+
+              for (const num of plan.issueNumbers) {
+                try {
+                  const { data: target } = await github.rest.issues.get({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                  });
+                  if (target.pull_request) continue;
+                  if (target.state === 'closed') continue;
+
+                  if (plan.dryRun) {
+                    core.notice(`[dry-run] sweep would resolve #${num} via PR #${pr.number}.`);
+                    continue;
+                  }
+
+                  await ensureLabel('resolved', '0e8a16', 'Auto-classified: issue resolved');
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    labels: ['resolved'],
+                  });
+
+                  const comments = await github.paginate(github.rest.issues.listComments, {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num,
+                    per_page: 100,
+                  });
+                  const already = comments.some(c => c.body && c.body.includes(classifier.RESOLVED_MARKER));
+                  if (!already) {
+                    await github.rest.issues.createComment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: num,
+                      body: plan.comment,
+                    });
+                  }
+
+                  if (plan.shouldClose) {
+                    await github.rest.issues.update({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: num,
+                      state: 'closed',
+                      state_reason: 'completed',
+                    });
+                    core.notice(`Sweep closed #${num} (resolved by merged PR #${pr.number}).`);
+                  }
+                } catch (e) {
+                  core.warning(`Sweep failed for issue #${num}: ${e.message}`);
+                }
+              }
+            }
+            core.info(`Sweep scanned ${processed} merged PR(s).`);
+      - name: Notify on failure
+        if: failure()
+        uses: ./.github/actions/notify-on-failure
