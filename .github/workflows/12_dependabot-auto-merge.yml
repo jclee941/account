@@ -145,10 +145,6 @@ jobs:
             # response so genuine failures (auth, 5xx) surface instead of
             # being swallowed; only HTTP 422 (branch already up to date or an
             # un-updatable merge conflict) is a benign, expected outcome.
-            # subcommand, so call the REST endpoint directly. Capture the
-            # response so genuine failures (auth, 5xx) surface instead of
-            # being swallowed; only HTTP 422 (branch already up to date or an
-            # un-updatable merge conflict) is a benign, expected outcome.
             if gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/update-branch" \
               >/tmp/update_branch_out 2>/tmp/update_branch_err; then
               echo "::notice::update-branch succeeded for $PR_URL"
