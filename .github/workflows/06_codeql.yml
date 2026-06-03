@@ -60,4 +60,4 @@ jobs:
         if: failure()
         uses: ./.github/actions/notify-on-failure
         with:
-          title: '🚨 CodeQL Analysis Failed: ${{ github.run_id }}'
+          title: '🚨 CodeQL Analysis Failed'

@@ -79,4 +79,4 @@ jobs:
         if: failure()
         uses: ./.github/actions/notify-on-failure
         with:
-          title: '🚨 Gitleaks Scan Failed: ${{ github.run_id }}'
+          title: '🚨 Gitleaks Scan Failed'
