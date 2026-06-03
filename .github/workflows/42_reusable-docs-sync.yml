@@ -60,7 +60,7 @@ jobs:
             // Stable title (no per-run date) so we can dedupe. Spamming a new
             // issue every failed run floods the tracker; instead comment on
             // the existing open broken-links issue if one exists.
-            const title = '[BOT] \uba38\uc11c \ub9c1\ud06c \uae68\uc9d0 \uac10\uc9c0';
+            const title = '[BOT] 문서 링크 깨짐 감지';
             const body = `## \ud83d\udea8 \ubb38\uc11c \ub9c1\ud06c \uae68\uc9d0 \uac10\uc9c0\n\n` +
               `Markdown \ud30c\uc77c\uc758 \ub9c1\ud06c \uc810\uac80 \uc911 \uae68\uc9c4 \ub9c1\ud06c\uac00 \ubc1c\uacac\ub418\uc5c8\uc2b5\ub2c8\ub2e4.\n\n` +
               `- Workflow: ${{ github.workflow }}\n` +
@@ -76,7 +76,9 @@ jobs:
               labels: 'broken-links',
               per_page: 100,
             });
-            const match = existing.data.find(i => i.title === title);
+            // Exclude PRs (issues.listForRepo can include pull requests) and
+            // match the exact stable title.
+            const match = existing.data.find(i => !i.pull_request && i.title === title);
             if (match) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
