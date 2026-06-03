@@ -14,12 +14,15 @@ on:
       - "Auto Deploy Workflows"
       - "PR Checks"
       - "Gitleaks"
+      - "CodeQL"
       - "Runtime Health Check"
       - "ELK Health Check"
+      - "ELK Setup"
       - "Downstream Health Check"
       - "Bot Health Monitor"
       - "Drift Detector"
       - "CI Auto-Heal"
+      - "Repository Health Check"
     types: [completed]
   schedule:
     # Daily stale-failure-issue sweep: close failure/health issues whose
@@ -166,6 +169,48 @@ jobs:
               --comment "Resolved by a successful $WF_NAME run on $HEAD_SHA. Auto-closed by jclee-bot." \
               --reason completed \
               || echo "::warning::failed to close #$N; continuing"
+          done
+
+      - name: On success, close stable-titled health/scan issues for this workflow
+        if: steps.ev.outputs.conclusion == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WF_NAME: ${{ steps.ev.outputs.wf_name }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          # Map the recovered workflow NAME -> title substrings of the stable
+          # (and legacy) failure/health issues it creates. On success, close
+          # them immediately (event-driven), complementing the daily sweep.
+          case "$WF_NAME" in
+            "Gitleaks") SUBS='Gitleaks Scan Failed' ;;
+            "CodeQL") SUBS='CodeQL Analysis Failed' ;;
+            "ELK Health Check") SUBS='ELK Health Check Failed' ;;
+            "ELK Setup") SUBS='ELK Setup Failed' ;;
+            "Runtime Health Check") SUBS=$(printf '%s\n' 'Bot webhook endpoint unreachable' 'CLIProxyAPI unreachable' 'jclee-bot not responding' 'Runtime Health Check failed') ;;
+            "Downstream Health Check") SUBS=$(printf '%s\n' 'Downstream workflow failures detected' 'Downstream Health Check failed') ;;
+            "Bot Health Monitor") SUBS=$(printf '%s\n' 'bot-health' 'Bot Health Monitor failed') ;;
+            "Drift Detector") SUBS='Drift Detector Failed' ;;
+            "CI Auto-Heal") SUBS=$(printf '%s\n' 'CI failure:' 'CI Auto-Heal failed') ;;
+            *) echo "::notice::No stable-title mapping for '$WF_NAME'; nothing to close here"; exit 0 ;;
+          esac
+          printf '%s\n' "$SUBS" | while IFS= read -r sub; do
+            [ -z "$sub" ] && continue
+            ids=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+              --search "in:title \"$sub\"" --limit 100 \
+              --json number --jq '.[].number' 2>/dev/null || true)
+            [ -z "$ids" ] && continue
+            for n in $ids; do
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "::notice::DRY-RUN: would close #$n ($WF_NAME recovered)"
+                continue
+              fi
+              gh issue close "$n" --repo "$GITHUB_REPOSITORY" \
+                --comment "Resolved: $WF_NAME concluded success. Auto-closed by jclee-bot (event-driven recovery)." \
+                --reason completed \
+                && echo "::notice::Closed #$n ($WF_NAME recovered)" \
+                || echo "::warning::failed to close #$n; continuing"
+            done
           done
 
       - name: On success, close legacy auto-deploy failure issues

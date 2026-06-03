@@ -13,7 +13,7 @@ name: Issue Classification
 #   * resolved-sweep            — scheduled sweep: open issues whose linked PR is
 #                                 already merged get labeled/closed.
 #
-# All pure logic lives in `.github/scripts/issue-classifier.js` (unit-tested via
+# All pure logic lives in `.github/scripts/issue-classifier.cjs` (unit-tested via
 # scripts/issue_classifier_js_test.py and node --check in 90_sanity.yml). This
 # workflow only performs the GitHub-side effects. `dry_run` logs the plan
 # without mutating anything.
@@ -107,7 +107,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const path = require('path');
-            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.js'));
+            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.cjs'));
             // Ensure a label exists before adding it (avoids a 404 on repos that
             // lack the label).
             async function ensureLabel(name, color, description) {
@@ -214,7 +214,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const path = require('path');
-            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.js'));
+            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.cjs'));
             const cfg = classifier.parseConfig({
               close_resolved_by_pr: process.env.CLOSE_RESOLVED_BY_PR,
               dry_run: process.env.DRY_RUN,
@@ -329,7 +329,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const path = require('path');
-            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.js'));
+            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.cjs'));
             async function ensureLabel(name, color, description) {
               try {
                 await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
@@ -434,7 +434,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const path = require('path');
-            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.js'));
+            const classifier = require(path.join(process.env.GITHUB_WORKSPACE, '.github/scripts/issue-classifier.cjs'));
             async function ensureLabel(name, color, description) {
               try {
                 await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
