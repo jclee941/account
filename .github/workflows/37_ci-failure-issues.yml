@@ -9,8 +9,22 @@ name: CI Failure Issues
 
 on:
   workflow_run:
-    workflows: ["Sanity", "Auto Deploy Workflows", "PR Checks"]
+    workflows:
+      - "Sanity"
+      - "Auto Deploy Workflows"
+      - "PR Checks"
+      - "Gitleaks"
+      - "Runtime Health Check"
+      - "ELK Health Check"
+      - "Downstream Health Check"
+      - "Bot Health Monitor"
+      - "Drift Detector"
+      - "CI Auto-Heal"
     types: [completed]
+  schedule:
+    # Daily stale-failure-issue sweep: close failure/health issues whose
+    # originating workflow has since recovered (latest master run == success).
+    - cron: "45 5 * * *"  # 05:45 UTC daily (offset from other crons)
   workflow_dispatch:
     inputs:
       workflow_name:
@@ -52,6 +66,9 @@ concurrency:
 
 jobs:
   triage:
+    # The event-driven path handles workflow_run + manual dispatch. The daily
+    # schedule is handled by the separate `sweep` job below.
+    if: github.event_name != 'schedule'
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 5
     # Trigger only on FAILURE conclusion (success → close stale below).
@@ -236,3 +253,79 @@ jobs:
       - name: Notify on failure
         if: failure()
         uses: ./.github/actions/notify-on-failure
+
+  # Daily sweep: auto-close stale failure/health issues whose originating
+  # workflow has since recovered. Maps each open issue to its workflow file by
+  # title pattern, queries that workflow's latest COMPLETED run on the default
+  # branch, and closes the issue when the latest run conclusion is success.
+  # This is the safety-net layer for issues the event-driven path missed
+  # (missed webhooks, renamed workflows, legacy per-run-id-titled issues).
+  sweep:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - name: Sweep stale failure/health issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'master' }}
+        run: |
+          set -euo pipefail
+          # Map a title-substring -> workflow file. A stale issue whose title
+          # contains the key is auto-closed iff that workflow's latest
+          # completed run on the default branch concluded 'success'.
+          # Format: '<title-substring>|<workflow-file>'
+          MAP="$(printf '%s\n' \
+            'Gitleaks Scan Failed|05_gitleaks.yml' \
+            'Runtime Health Check failed|30_runtime-health-check.yml' \
+            'ELK Health Check Failed|26_elk-health-check.yml' \
+            'Downstream Health Check failed|29_downstream-health-check.yml' \
+            'Bot Health|28_bot-health-monitor.yml' \
+            'CI Auto-Heal failed|60_ci-auto-heal.yml' \
+            'Repository Health Check|31_repo-health.yml')"
+
+          # Cache each workflow's latest completed run conclusion.
+          latest_conclusion() {
+            wf_file="$1"
+            # Query-string form forces a GET; -f would make gh send a POST (404).
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$wf_file/runs?branch=$DEFAULT_BRANCH&status=completed&per_page=1" \
+              --jq '.workflow_runs[0].conclusion // "none"' 2>/dev/null || echo "error"
+          }
+
+          # Note: the loop runs in a pipeline subshell, so per-close logging
+          printf '%s\n' "$MAP" | while IFS='|' read -r substr wf_file; do
+            [ -z "$substr" ] && continue
+            # Find open issues whose title contains the substring.
+            issues=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+              --search "in:title \"$substr\"" --limit 100 \
+              --json number,title --jq '.[].number' 2>/dev/null || true)
+            [ -z "$issues" ] && continue
+            conclusion=$(latest_conclusion "$wf_file")
+            if [ "$conclusion" != "success" ]; then
+              echo "::notice::$wf_file latest run conclusion=$conclusion; keeping its open issues"
+              continue
+            fi
+            for n in $issues; do
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "::notice::DRY-RUN: would close #$n (workflow $wf_file recovered)"
+                continue
+              fi
+              if gh issue close "$n" --repo "$GITHUB_REPOSITORY" \
+                --comment "Auto-closed by the stale-failure sweep: $wf_file latest run on $DEFAULT_BRANCH concluded success, so this failure issue is resolved." \
+                --reason completed; then
+                echo "::notice::Closed stale issue #$n ($wf_file recovered)"
+              else
+                echo "::warning::failed to close #$n; continuing"
+              fi
+            done
+          done
+          echo "::notice::Stale-failure sweep complete"
