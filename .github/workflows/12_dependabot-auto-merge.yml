@@ -141,9 +141,24 @@ jobs:
           if [[ "$state" == "BLOCKED" && "$failed" == "0" ]]; then
             echo "::notice::PR $PR_URL is BLOCKED with no failing checks; updating branch to clear stale required-context drift"
             # gh CLI on the runner may predate the `gh pr update-branch`
-            # subcommand, so call the REST endpoint directly.
-            gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/update-branch" \
-              || echo "::warning::update-branch failed (already up to date, conflict, or not permitted); not retrying"
+            # subcommand, so call the REST endpoint directly. Capture the
+            # response so genuine failures (auth, 5xx) surface instead of
+            # being swallowed; only HTTP 422 (branch already up to date or an
+            # un-updatable merge conflict) is a benign, expected outcome.
+            # subcommand, so call the REST endpoint directly. Capture the
+            # response so genuine failures (auth, 5xx) surface instead of
+            # being swallowed; only HTTP 422 (branch already up to date or an
+            # un-updatable merge conflict) is a benign, expected outcome.
+            if gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/update-branch" \
+              >/tmp/update_branch_out 2>/tmp/update_branch_err; then
+              echo "::notice::update-branch succeeded for $PR_URL"
+            elif grep -qE 'HTTP 422|already up to date|merge conflict' /tmp/update_branch_err; then
+              echo "::notice::update-branch not needed for $PR_URL (already up to date or unmergeable conflict)"
+            else
+              echo "::error::update-branch failed for $PR_URL"
+              cat /tmp/update_branch_err >&2 || true
+              exit 1
+            fi
           else
             echo "::notice::PR $PR_URL mergeStateStatus=$state failed=$failed; no self-heal needed"
           fi
