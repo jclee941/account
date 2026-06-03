@@ -283,22 +283,46 @@ jobs:
           # Map a title-substring -> workflow file. A stale issue whose title
           # contains the key is auto-closed iff that workflow's latest
           # completed run on the default branch concluded 'success'.
+          # Includes BOTH current stable titles and legacy per-run-id titles
+          # so historical spam issues are also swept.
           # Format: '<title-substring>|<workflow-file>'
           MAP="$(printf '%s\n' \
             'Gitleaks Scan Failed|05_gitleaks.yml' \
-            'Runtime Health Check failed|30_runtime-health-check.yml' \
+            'CodeQL Analysis Failed|06_codeql.yml' \
             'ELK Health Check Failed|26_elk-health-check.yml' \
+            'ELK Setup Failed|27_elk-setup.yml' \
+            'Bot webhook endpoint unreachable|30_runtime-health-check.yml' \
+            'CLIProxyAPI unreachable|30_runtime-health-check.yml' \
+            'jclee-bot not responding|30_runtime-health-check.yml' \
+            'Runtime Health Check failed|30_runtime-health-check.yml' \
+            'Downstream workflow failures detected|29_downstream-health-check.yml' \
             'Downstream Health Check failed|29_downstream-health-check.yml' \
-            'Bot Health|28_bot-health-monitor.yml' \
+            'bot-health|28_bot-health-monitor.yml' \
+            'Bot Health Monitor failed|28_bot-health-monitor.yml' \
+            'CI failure:|60_ci-auto-heal.yml' \
             'CI Auto-Heal failed|60_ci-auto-heal.yml' \
+            'Drift Detector Failed|33_drift-detector.yml' \
             'Repository Health Check|31_repo-health.yml')"
 
-          # Cache each workflow's latest completed run conclusion.
+          # Latest COMPLETED run conclusion for a workflow on the default branch.
           latest_conclusion() {
             wf_file="$1"
             # Query-string form forces a GET; -f would make gh send a POST (404).
             gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$wf_file/runs?branch=$DEFAULT_BRANCH&status=completed&per_page=1" \
               --jq '.workflow_runs[0].conclusion // "none"' 2>/dev/null || echo "error"
+          }
+
+          # Whether the NEWEST run (any status) is still in flight. If a fresh
+          # run is queued/in-progress we hold off closing until it completes,
+          # so we never close based on a stale success while a new run runs.
+          newest_in_flight() {
+            wf_file="$1"
+            status=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$wf_file/runs?branch=$DEFAULT_BRANCH&per_page=1" \
+              --jq '.workflow_runs[0].status // "none"' 2>/dev/null || echo "error")
+            case "$status" in
+              queued|in_progress|waiting|pending|requested) return 0 ;;
+              *) return 1 ;;
+            esac
           }
 
           # Note: the loop runs in a pipeline subshell, so per-close logging
@@ -309,6 +333,10 @@ jobs:
               --search "in:title \"$substr\"" --limit 100 \
               --json number,title --jq '.[].number' 2>/dev/null || true)
             [ -z "$issues" ] && continue
+            if newest_in_flight "$wf_file"; then
+              echo "::notice::$wf_file has a run in flight; deferring close of its open issues"
+              continue
+            fi
             conclusion=$(latest_conclusion "$wf_file")
             if [ "$conclusion" != "success" ]; then
               echo "::notice::$wf_file latest run conclusion=$conclusion; keeping its open issues"
