@@ -100,7 +100,10 @@ jobs:
       - name: Create tag
         if: steps.bump.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use GH_PAT (falls back to GITHUB_TOKEN) so the created tag push
+          # triggers tag-listening workflows (24_release-notes.yml on push.tags:v*).
+          # GITHUB_TOKEN-created events do NOT trigger other workflows (recursion guard).
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           NEW_TAG: ${{ steps.bump.outputs.new_tag }}
           SHA: ${{ steps.bump.outputs.sha }}
           BUMP: ${{ steps.bump.outputs.bump }}
