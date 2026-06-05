@@ -44,6 +44,10 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.21'
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Run naming validator with --fix
         id: fix
@@ -71,8 +75,25 @@ jobs:
             git diff --stat
           fi
 
-      - name: Push fixes back to PR
+      - name: LLM bot auto-fix push decision (DP-12/13)
+        id: llm
         if: steps.check.outputs.has_changes == 'true'
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -eu
+          git diff --stat > "${RUNNER_TEMP}/bot-auto-fix.diffstat" || true
+          python3 -c "import json,os; json.dump({'title':os.environ.get('PR_TITLE',''),'branch':os.environ.get('PR_BRANCH',''),'author':os.environ.get('PR_AUTHOR',''),'diffstat':open(os.environ['RUNNER_TEMP'] + '/bot-auto-fix.diffstat', encoding='utf-8').read()}, open(os.environ['RUNNER_TEMP'] + '/bot-auto-fix-input.json','w'))"
+          python3 scripts/llm_decide.py \
+            --decision-type bot-auto-fix \
+            --input "${RUNNER_TEMP}/bot-auto-fix-input.json" \
+            --output "$GITHUB_OUTPUT" || true
+
+      - name: Push fixes back to PR
+        if: steps.check.outputs.has_changes == 'true' && steps.llm.outputs.ok == 'true' && steps.llm.outputs.action == 'push' && steps.llm.outputs.requires_human != 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}

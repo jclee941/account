@@ -25,11 +25,22 @@ jobs:
           terraform version 2>/dev/null || echo "terraform not available"
           node --version
           go version 2>/dev/null || echo "go not available"
+      - name: Checkout decision helper
+        uses: actions/checkout@v6
+        with:
+          path: _bot-scripts
+          fetch-depth: 1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Auto-heal failed CI across repos
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
         run: |
           set -eu
+          HELPER="$GITHUB_WORKSPACE/_bot-scripts/scripts/llm_decide.py"
           REPOS="account blacklist bug hycu_fsds idle-outpost opencode resume safetywallet splunk terraform tmux"
           HEAL_COUNT=0
           ISSUE_COUNT=0
@@ -64,8 +75,29 @@ jobs:
               cd "$TEMP_DIR"
               FIXED=false
               FIX_SUMMARY=""
-              if [ -f "package.json" ]; then
-                if echo "$WF_NAME" | grep -qiE "audit|dependency|security|npm"; then
+              HAS_PACKAGE_JSON=false
+              HAS_PACKAGE_LOCK=false
+              HAS_GO_MOD=false
+              HAS_TERRAFORM=false
+              HAS_PYTHON=false
+              [ -f "package.json" ] && HAS_PACKAGE_JSON=true
+              [ -f "package-lock.json" ] && HAS_PACKAGE_LOCK=true
+              [ -f "go.mod" ] && HAS_GO_MOD=true
+              if ls ./*.tf >/dev/null 2>&1; then HAS_TERRAFORM=true; fi
+              if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then HAS_PYTHON=true; fi
+              LLM_INPUT="${RUNNER_TEMP}/ci-auto-heal-${REPO_NAME}-${RUN_ID}.json"
+              LLM_OUTPUT="${RUNNER_TEMP}/ci-auto-heal-${REPO_NAME}-${RUN_ID}.out"
+              export FULL REPO_NAME RUN_ID WF_NAME BRANCH HAS_PACKAGE_JSON HAS_PACKAGE_LOCK HAS_GO_MOD HAS_TERRAFORM HAS_PYTHON LLM_INPUT
+              python3 -c "import json,os; json.dump({'repo':os.environ['FULL'],'run_id':os.environ['RUN_ID'],'workflow':os.environ['WF_NAME'],'branch':os.environ['BRANCH'],'files':{'package_json':os.environ['HAS_PACKAGE_JSON']=='true','package_lock':os.environ['HAS_PACKAGE_LOCK']=='true','go_mod':os.environ['HAS_GO_MOD']=='true','terraform':os.environ['HAS_TERRAFORM']=='true','python':os.environ['HAS_PYTHON']=='true'}}, open(os.environ['LLM_INPUT'],'w'))" || true
+              python3 "$HELPER" --decision-type ci-auto-heal --input "$LLM_INPUT" --output "$LLM_OUTPUT" || true
+              LLM_OK=$(grep '^ok=' "$LLM_OUTPUT" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+              LLM_ACTION=$(grep '^action=' "$LLM_OUTPUT" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+              LLM_COMMAND=$(grep '^command=' "$LLM_OUTPUT" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+              LLM_REQUIRES_HUMAN=$(grep '^requires_human=' "$LLM_OUTPUT" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+              if [ "$LLM_OK" != "true" ] || [ "$LLM_ACTION" != "command" ] || [ "$LLM_REQUIRES_HUMAN" = "true" ]; then
+                echo "   LLM did not authorize auto-heal; fail-closed"
+              elif [ -f "package.json" ]; then
+                if [ "$LLM_COMMAND" = "npm-audit-fix" ] && echo "$WF_NAME" | grep -qiE "audit|dependency|security|npm"; then
                   echo "   Attempting npm audit fix"
                   if npm audit fix --package-lock-only 2>/dev/null; then
                     FIXED=true
@@ -75,7 +107,7 @@ jobs:
                     FIX_SUMMARY="$FIX_SUMMARY\n- npm audit fix (with package-lock generation)"
                   fi
                 fi
-                if echo "$WF_NAME" | grep -qiE "lint|prettier|format|style"; then
+                if [ "$LLM_COMMAND" = "npm-lint-fix" ] && echo "$WF_NAME" | grep -qiE "lint|prettier|format|style"; then
                   echo "   Attempting lint/format fixes"
                   if npm run lint:fix 2>/dev/null; then
                     FIXED=true
@@ -85,7 +117,7 @@ jobs:
                     FIX_SUMMARY="$FIX_SUMMARY\n- prettier --write"
                   fi
                 fi
-                if [ "$FIXED" != "true" ] && [ -f "package-lock.json" ]; then
+                if [ "$LLM_COMMAND" = "npm-update" ] && [ "$FIXED" != "true" ] && [ -f "package-lock.json" ]; then
                   echo "   Attempting npm update"
                   if npm update --package-lock-only 2>/dev/null; then
                     FIXED=true
@@ -93,8 +125,8 @@ jobs:
                   fi
                 fi
               fi
-              if [ -f "go.mod" ]; then
-                if echo "$WF_NAME" | grep -qiE "go|mod|tidy|build|test"; then
+              if [ "$LLM_OK" = "true" ] && [ "$LLM_ACTION" = "command" ] && [ "$LLM_REQUIRES_HUMAN" != "true" ] && [ -f "go.mod" ]; then
+                if [ "$LLM_COMMAND" = "go-mod-tidy" ] && echo "$WF_NAME" | grep -qiE "go|mod|tidy|build|test"; then
                   echo "   Attempting go mod tidy"
                   if go mod tidy 2>/dev/null; then
                     FIXED=true
@@ -102,8 +134,8 @@ jobs:
                   fi
                 fi
               fi
-              if ls ./*.tf >/dev/null 2>&1; then
-                if echo "$WF_NAME" | grep -qiE "terraform|fmt|validate"; then
+              if [ "$LLM_OK" = "true" ] && [ "$LLM_ACTION" = "command" ] && [ "$LLM_REQUIRES_HUMAN" != "true" ] && ls ./*.tf >/dev/null 2>&1; then
+                if [ "$LLM_COMMAND" = "terraform-fmt" ] && echo "$WF_NAME" | grep -qiE "terraform|fmt|validate"; then
                   echo "   Attempting terraform fmt"
                   if terraform fmt -recursive 2>/dev/null; then
                     FIXED=true
@@ -111,13 +143,16 @@ jobs:
                   fi
                 fi
               fi
-              if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
-                if echo "$WF_NAME" | grep -qiE "python|lint|ruff|black|format"; then
+              if [ "$LLM_OK" = "true" ] && [ "$LLM_ACTION" = "command" ] && [ "$LLM_REQUIRES_HUMAN" != "true" ] && { [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; }; then
+                if [ "$LLM_COMMAND" = "ruff-fix" ] && echo "$WF_NAME" | grep -qiE "python|lint|ruff|black|format"; then
                   echo "   Attempting Python format fixes"
                   if ruff check --fix . 2>/dev/null; then
                     FIXED=true
                     FIX_SUMMARY="$FIX_SUMMARY\n- ruff check --fix"
-                  elif black . 2>/dev/null; then
+                  fi
+                elif [ "$LLM_COMMAND" = "black-format" ] && echo "$WF_NAME" | grep -qiE "python|lint|ruff|black|format"; then
+                  echo "   Attempting Python format fixes"
+                  if black . 2>/dev/null; then
                     FIXED=true
                     FIX_SUMMARY="$FIX_SUMMARY\n- black ."
                   fi

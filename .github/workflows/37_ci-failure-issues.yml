@@ -245,6 +245,36 @@ jobs:
           gh label create ci-failure --color B60205 --description "Auto-managed by ci-failure-issues.yml" 2>/dev/null || true
           gh label create automated --color BFD4F2 --description "Auto-managed by jclee-bot" 2>/dev/null || true
 
+      - name: Checkout
+        if: steps.ev.outputs.conclusion == 'failure'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        if: steps.ev.outputs.conclusion == 'failure'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: LLM CI failure issue decision (DP-9)
+        if: steps.ev.outputs.conclusion == 'failure'
+        id: llm
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          WF_NAME: ${{ steps.ev.outputs.wf_name }}
+          HEAD_SHA: ${{ steps.ev.outputs.head_sha }}
+          SHORT_SHA: ${{ steps.ev.outputs.short_sha }}
+          RUN_ID: ${{ steps.ev.outputs.run_id }}
+          PR_NUMBER: ${{ steps.ev.outputs.pr_number }}
+        run: |
+          set -eu
+          python3 -c "import json,os; json.dump({'workflow':os.environ['WF_NAME'],'head_sha':os.environ['HEAD_SHA'],'short_sha':os.environ['SHORT_SHA'],'run_id':os.environ['RUN_ID'],'pr_number':os.environ['PR_NUMBER'],'title':'[ci] '+os.environ['WF_NAME']+' failed at '+os.environ['SHORT_SHA']}, open(os.environ['RUNNER_TEMP'] + '/ci-failure-issue-input.json','w'))"
+          python3 scripts/llm_decide.py \
+            --decision-type ci-failure-issue \
+            --input "${RUNNER_TEMP}/ci-failure-issue-input.json" \
+            --output "$GITHUB_OUTPUT" || true
+
       - name: Find or create issue for failure
         if: steps.ev.outputs.conclusion == 'failure'
         env:
@@ -255,9 +285,15 @@ jobs:
           RUN_ID: ${{ steps.ev.outputs.run_id }}
           PR_NUMBER: ${{ steps.ev.outputs.pr_number }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          LLM_OK: ${{ steps.llm.outputs.ok }}
+          LLM_ACTION: ${{ steps.llm.outputs.action }}
         run: |
           set -eu
           TITLE="[ci] $WF_NAME failed at $SHORT_SHA"
+          if [ "$LLM_OK" = "true" ] && [ "$LLM_ACTION" != "create" ]; then
+            echo "::notice::LLM chose '$LLM_ACTION'; skipping ci-failure issue creation"
+            exit 0
+          fi
           # Idempotency: search for an open issue with the SAME title.
           # Compare exact title rather than substring to avoid false matches.
           EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" \
