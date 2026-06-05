@@ -17,6 +17,11 @@ name: Issue Backfill
 # actually mutates labels.
 
 on:
+  issues:
+    types: [opened, edited, reopened, labeled, unlabeled]
+  workflow_run:
+    workflows: ["Issue Management", "Issue Classification"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -48,6 +53,7 @@ concurrency:
 
 jobs:
   backfill:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:

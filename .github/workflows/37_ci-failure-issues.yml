@@ -23,36 +23,20 @@ on:
       - "Drift Detector"
       - "CI Auto-Heal"
       - "Repository Health Check"
+      - "Auto Hardcode Scan"
+      - "Live E2E Tests"
     types: [completed]
+  issues:
+    types: [opened, edited, reopened, closed, labeled, unlabeled]
+  repository_dispatch:
+    types: [ci-failure-sweep]
   workflow_dispatch:
     inputs:
-      workflow_name:
-        description: Workflow name
-        required: true
-        type: string
-      head_sha:
-        description: Commit SHA
-        required: true
-        type: string
-      run_id:
-        description: Run ID (0 for synthetic)
-        required: true
-        type: string
-      conclusion:
-        description: Conclusion (failure or success)
-        required: true
-        type: string
-        default: failure
       dry_run:
         description: Skip actual issue ops
         required: false
         type: boolean
         default: false
-      pr_number:
-        description: PR number (0 if not applicable)
-        required: false
-        type: string
-        default: '0'
 
 permissions:
   contents: read
@@ -60,14 +44,14 @@ permissions:
   actions: read
 
 concurrency:
-  group: ci-failure-issues-${{ github.event.workflow_run.head_sha || inputs.head_sha || github.run_id }}
+  group: ci-failure-issues-${{ github.event.workflow_run.head_sha || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   triage:
     # The event-driven path handles workflow_run + manual dispatch. The daily
     # schedule is handled by the separate `sweep` job below.
-    if: github.event_name != 'schedule'
+    if: github.event_name == 'workflow_run'
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 5
     # Trigger only on FAILURE conclusion (success → close stale below).
@@ -81,11 +65,11 @@ jobs:
         id: ev
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_WORKFLOW_NAME: ${{ inputs.workflow_name }}
-          INPUT_HEAD_SHA: ${{ inputs.head_sha }}
-          INPUT_RUN_ID: ${{ inputs.run_id }}
-          INPUT_CONCLUSION: ${{ inputs.conclusion }}
-          INPUT_PR_NUMBER: ${{ inputs.pr_number || '0' }}
+          INPUT_WORKFLOW_NAME: ''
+          INPUT_HEAD_SHA: ''
+          INPUT_RUN_ID: ''
+          INPUT_CONCLUSION: ''
+          INPUT_PR_NUMBER: '0'
           EVENT_NAME: ${{ github.event_name }}
           WF_RUN_NAME: ${{ github.event.workflow_run.name }}
           WF_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -338,7 +322,7 @@ jobs:
   # This is the safety-net layer for issues the event-driven path missed
   # (missed webhooks, renamed workflows, legacy per-run-id-titled issues).
   sweep:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'issues' || github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:

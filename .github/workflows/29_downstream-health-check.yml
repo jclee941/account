@@ -5,6 +5,11 @@ name: Downstream Health Check
 # Closes the issue when all repos are green.
 
 on:
+  workflow_run:
+    workflows: ["Auto Deploy Workflows", "PR Checks", "Gitleaks", "actionlint"]
+    types: [completed]
+  repository_dispatch:
+    types: [downstream-health-check]
   workflow_dispatch:
 
 permissions:
@@ -17,6 +22,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     name: Check downstream workflow health
