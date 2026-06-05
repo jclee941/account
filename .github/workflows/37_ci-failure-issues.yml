@@ -26,8 +26,9 @@ on:
       - "Auto Hardcode Scan"
       - "Live E2E Tests"
     types: [completed]
-  issues:
-    types: [opened, edited, reopened, closed, labeled, unlabeled]
+  # NOTE: no `issues:` trigger — the sweep CLOSES/EDITS issues, which via GH_PAT
+  # would re-trigger this workflow (feedback loop). Sweep runs on workflow_run
+  # success + repository_dispatch + manual dispatch instead.
   repository_dispatch:
     types: [ci-failure-sweep]
   workflow_dispatch:
@@ -322,7 +323,7 @@ jobs:
   # This is the safety-net layer for issues the event-driven path missed
   # (missed webhooks, renamed workflows, legacy per-run-id-titled issues).
   sweep:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'issues' || github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
