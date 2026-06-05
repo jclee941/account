@@ -48,51 +48,75 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Auto-label new issues
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: LLM label decision (DP-5)
+        id: llm
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -eu
+          python3 -c "import json,os; json.dump({'title':os.environ.get('ISSUE_TITLE',''),'body':os.environ.get('ISSUE_BODY','')}, open('${RUNNER_TEMP}/issue-label-input.json','w'))"
+          # Helper always exits 0; it emits ok=/labels=/source= to GITHUB_OUTPUT.
+          # On LLM failure it fail-opens (ok=false) so the github-script step below
+          # degrades to the deterministic keyword labels.
+          python3 scripts/llm_decide.py \
+            --decision-type issue-label \
+            --input "${RUNNER_TEMP}/issue-label-input.json" \
+            --output "$GITHUB_OUTPUT" || true
+
+      - name: Auto-label new issues (LLM-first, deterministic fallback)
         uses: actions/github-script@v9
+        env:
+          LLM_OK: ${{ steps.llm.outputs.ok }}
+          LLM_LABELS: ${{ steps.llm.outputs.labels }}
         with:
           script: |
             const issue = context.payload.issue;
-            const title = issue.title.toLowerCase();
-            const body = (issue.body || '').toLowerCase();
-            const combined = title + ' ' + body;
-            
-            const labels = [];
-            
-            // Keyword-based labeling
-            if (combined.includes('bug') || combined.includes('fix') || combined.includes('error') || combined.includes('crash')) {
-              labels.push('bug');
+            const allowed = ['bug','enhancement','documentation','security','tests','performance','refactor','dependencies'];
+
+            let labels = [];
+            // LLM-first: use validated labels when the decision succeeded.
+            if (process.env.LLM_OK === 'true') {
+              try {
+                const parsed = JSON.parse(process.env.LLM_LABELS || '[]');
+                labels = parsed.filter(l => allowed.includes(l));
+                console.log(`LLM labels: ${labels.join(', ') || '(none)'}`);
+              } catch (e) {
+                console.log(`LLM labels parse failed: ${e}; falling back`);
+              }
             }
-            if (combined.includes('feature') || combined.includes('enhance') || combined.includes('add') || combined.includes('support')) {
-              labels.push('enhancement');
+
+            // Deterministic fallback (fail-open): used when LLM failed or returned
+            // no usable labels. Preserves the original keyword behavior exactly.
+            if (labels.length === 0) {
+              const title = issue.title.toLowerCase();
+              const body = (issue.body || '').toLowerCase();
+              const combined = title + ' ' + body;
+              if (combined.includes('bug') || combined.includes('fix') || combined.includes('error') || combined.includes('crash')) labels.push('bug');
+              if (combined.includes('feature') || combined.includes('enhance') || combined.includes('add') || combined.includes('support')) labels.push('enhancement');
+              if (combined.includes('doc') || combined.includes('readme') || combined.includes('documentation') || combined.includes('wiki')) labels.push('documentation');
+              if (combined.includes('security') || combined.includes('vuln') || combined.includes('cve') || combined.includes('exploit')) labels.push('security');
+              if (combined.includes('test') || combined.includes('testing') || combined.includes('coverage')) labels.push('tests');
+              if (combined.includes('perf') || combined.includes('slow') || combined.includes('memory') || combined.includes('optimize')) labels.push('performance');
+              if (combined.includes('refactor') || combined.includes('clean') || combined.includes('debt')) labels.push('refactor');
+              if (combined.includes('deps') || combined.includes('dependency') || combined.includes('upgrade') || combined.includes('bump')) labels.push('dependencies');
+              if (labels.length > 0) console.log(`Fallback keyword labels: ${labels.join(', ')}`);
             }
-            if (combined.includes('doc') || combined.includes('readme') || combined.includes('documentation') || combined.includes('wiki')) {
-              labels.push('documentation');
-            }
-            if (combined.includes('security') || combined.includes('vuln') || combined.includes('cve') || combined.includes('exploit')) {
-              labels.push('security');
-            }
-            if (combined.includes('test') || combined.includes('testing') || combined.includes('coverage')) {
-              labels.push('tests');
-            }
-            if (combined.includes('perf') || combined.includes('slow') || combined.includes('memory') || combined.includes('optimize')) {
-              labels.push('performance');
-            }
-            if (combined.includes('refactor') || combined.includes('clean') || combined.includes('debt')) {
-              labels.push('refactor');
-            }
-            if (combined.includes('deps') || combined.includes('dependency') || combined.includes('upgrade') || combined.includes('bump')) {
-              labels.push('dependencies');
-            }
-            
+
             if (labels.length > 0) {
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                labels: labels
+                labels: [...new Set(labels)]
               });
-              console.log(`Added labels: ${labels.join(', ')}`);
+              console.log(`Added labels: ${[...new Set(labels)].join(', ')}`);
             }
 
   stale-remove:
