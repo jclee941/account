@@ -101,8 +101,45 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: LLM duplicate decision (DP-3)
+        id: llm
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_JSON: ${{ toJson(github.event.issue) }}
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json, os, subprocess
+
+          issue = json.loads(os.environ.get('ISSUE_JSON') or '{}')
+          candidates = []
+          try:
+              raw = subprocess.check_output([
+                  'gh', 'api', f"repos/{os.environ['GITHUB_REPOSITORY']}/issues?state=open&per_page=100",
+                  '--paginate'
+              ], text=True)
+              candidates = json.loads(raw)
+          except Exception:
+              candidates = []
+          payload = {'issue': issue, 'candidates': candidates}
+          with open(os.environ['RUNNER_TEMP'] + '/issue-classify-duplicate-input.json', 'w', encoding='utf-8') as f:
+              json.dump(payload, f)
+          PY
+          python3 scripts/llm_decide.py \
+            --decision-type issue-classify \
+            --input "${RUNNER_TEMP}/issue-classify-duplicate-input.json" \
+            --output "$GITHUB_OUTPUT" || true
       - name: Classify duplicate issue
         uses: actions/github-script@v9
+        env:
+          LLM_OK: ${{ steps.llm.outputs.ok }}
+          LLM_ACTION: ${{ steps.llm.outputs.action }}
+          LLM_REASON: ${{ steps.llm.outputs.reason }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -134,6 +171,42 @@ jobs:
             if (!issue || issue.pull_request) {
               core.info('Not an issue payload; skipping.');
               return;
+            }
+
+            if (process.env.LLM_OK === 'true') {
+              core.info(`#${issue.number}: LLM issue-classify action=${process.env.LLM_ACTION} reason=${process.env.LLM_REASON || ''}`);
+              if (process.env.LLM_ACTION === 'noop' || process.env.LLM_ACTION === 'resolved') {
+                return;
+              }
+              if (process.env.LLM_ACTION === 'duplicate') {
+                if (cfg.dryRun) {
+                  core.notice(`[dry-run] LLM would label #${issue.number} duplicate.`);
+                  return;
+                }
+                await ensureLabel('duplicate', 'cfd3d7', 'Auto-classified: possible duplicate');
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: ['duplicate'],
+                });
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  per_page: 100,
+                });
+                const already = comments.some(c => c.body && c.body.includes(classifier.DUP_MARKER));
+                if (!already) {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    body: `${classifier.DUP_MARKER}\n\nLLM classified this issue as a possible duplicate.\n\nReason: ${process.env.LLM_REASON || 'No reason provided.'}`,
+                  });
+                }
+                return;
+              }
             }
 
             const candidates = await github.paginate(github.rest.issues.listForRepo, {
@@ -323,8 +396,38 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: LLM resolved-signal decision (DP-4)
+        id: llm
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          ISSUE_JSON: ${{ toJson(github.event.issue) }}
+          COMMENT_JSON: ${{ toJson(github.event.comment) }}
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json, os
+
+          payload = {
+              'issue': json.loads(os.environ.get('ISSUE_JSON') or '{}'),
+              'comment': json.loads(os.environ.get('COMMENT_JSON') or 'null'),
+          }
+          with open(os.environ['RUNNER_TEMP'] + '/issue-classify-resolved-input.json', 'w', encoding='utf-8') as f:
+              json.dump(payload, f)
+          PY
+          python3 scripts/llm_decide.py \
+            --decision-type issue-classify \
+            --input "${RUNNER_TEMP}/issue-classify-resolved-input.json" \
+            --output "$GITHUB_OUTPUT" || true
       - name: Detect resolved signal
         uses: actions/github-script@v9
+        env:
+          LLM_OK: ${{ steps.llm.outputs.ok }}
+          LLM_ACTION: ${{ steps.llm.outputs.action }}
+          LLM_REASON: ${{ steps.llm.outputs.reason }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -355,6 +458,42 @@ jobs:
             if (issue.state === 'closed') {
               core.info(`#${issue.number} already closed; skipping.`);
               return;
+            }
+
+            if (process.env.LLM_OK === 'true') {
+              core.info(`#${issue.number}: LLM issue-classify action=${process.env.LLM_ACTION} reason=${process.env.LLM_REASON || ''}`);
+              if (process.env.LLM_ACTION === 'noop' || process.env.LLM_ACTION === 'duplicate') {
+                return;
+              }
+              if (process.env.LLM_ACTION === 'resolved') {
+                if (cfg.dryRun) {
+                  core.notice(`[dry-run] LLM would mark #${issue.number} resolved.`);
+                  return;
+                }
+                await ensureLabel('resolved', '0e8a16', 'Auto-classified: issue resolved');
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: ['resolved'],
+                });
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  per_page: 100,
+                });
+                const already = comments.some(c => c.body && c.body.includes(classifier.RESOLVED_MARKER));
+                if (!already) {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    body: `${classifier.RESOLVED_MARKER}\n\nLLM classified this issue as resolved.\n\nReason: ${process.env.LLM_REASON || 'No reason provided.'}`,
+                  });
+                }
+                return;
+              }
             }
 
             // Consider the issue body plus the triggering comment (if any).
