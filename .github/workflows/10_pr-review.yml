@@ -21,14 +21,16 @@ jobs:
   pr_review:
     strategy:
       matrix:
-        model: [minimax-m2.7, gpt-5.5]
+        model: [MiniMax-M3]
+      # max-parallel 1: MiniMax direct API rate-limit guard (one in-flight call)
+      max-parallel: 1
       fail-fast: false
     concurrency:
       group: pr-review-${{ github.event.pull_request.number }}-${{ matrix.model }}
       cancel-in-progress: true
     if: github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
-    name: PR review via CLIProxyAPI (${{ matrix.model }})
+    name: PR review via MiniMax (${{ matrix.model }})
     timeout-minutes: 30
 
     steps:
@@ -70,32 +72,31 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install -e .
 
-      - name: Verify cli_proxy connectivity
+      - name: Verify MiniMax connectivity
         id: cli_proxy
         env:
-          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
         run: |
           set -eu
           set +e
-          if [ -z "$CLIPROXY_API_KEY" ]; then
-            echo "::warning::CLIPROXY_API_KEY secret is not set on this repo; skipping review."
+          if [ -z "$MINIMAX_API_KEY" ]; then
+            echo "::warning::MINIMAX_API_KEY secret is not set on this repo; skipping review."
             echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "reason=CLIPROXY_API_KEY secret not set" >> "$GITHUB_OUTPUT"
+            echo "reason=MINIMAX_API_KEY secret not set" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          HTTP_CODE=$(curl -sS -o /tmp/cli_proxy_test.json -w '%{http_code}' \
+          HTTP_CODE=$(curl -sS -o /tmp/minimax_test.json -w '%{http_code}' \
             --max-time 15 \
-            https://cliproxy.jclee.me/v1/models \
-            -H "Authorization: Bearer $CLIPROXY_API_KEY")
+            https://api.minimax.io/v1/models \
+            -H "Authorization: Bearer $MINIMAX_API_KEY")
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "::warning::cli_proxy returned HTTP $HTTP_CODE; skipping review."
-            cat /tmp/cli_proxy_test.json || true
+            echo "::warning::MiniMax API returned HTTP $HTTP_CODE; skipping review."
+            cat /tmp/minimax_test.json || true
             echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "reason=cli_proxy HTTP $HTTP_CODE" >> "$GITHUB_OUTPUT"
+            echo "reason=MiniMax HTTP $HTTP_CODE" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          MODEL_COUNT=$(python3 -c "import json; print(len(json.load(open('/tmp/cli_proxy_test.json'))['data']))")
-          echo "cli_proxy OK - $MODEL_COUNT models available"
+          echo "MiniMax API OK (HTTP 200)"
           echo "ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Install GitHub CLI
@@ -116,22 +117,21 @@ jobs:
           # POSIX-valid dynaconf nested keys use double-underscore.
           # `OPENAI__KEY` → settings.openai.key, etc. See note below for the
           # GITHUB__USER_TOKEN case.
-          OPENAI__KEY: ${{ secrets.CLIPROXY_API_KEY }}
-          OPENAI__API_BASE: https://cliproxy.jclee.me/v1
-          OPENAI_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
-          OPENAI_BASE_URL: https://cliproxy.jclee.me/v1
+          OPENAI__KEY: ${{ secrets.MINIMAX_API_KEY }}
+          OPENAI__API_BASE: https://api.minimax.io/v1
+          OPENAI_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          OPENAI_BASE_URL: https://api.minimax.io/v1
           LITELLM_LOG: ${{ vars.PR_REVIEW_DEBUG == '1' && 'DEBUG' || 'INFO' }}
           LITELLM_LOCAL_MODEL_COST_MAP: "True"
           PR_REVIEW_DEBUG: ${{ vars.PR_REVIEW_DEBUG || '0' }}
           CONFIG__MODEL: ${{ matrix.model }}
           # Canonical fallback chain (matches .pr_agent.toml + configuration.toml +
-          # all review workflows; enforced by 90_sanity.yml). If matrix.model also
-          # appears here, it may be retried once as part of the finite fallback
-          # list; this is harmless but not deduplicated (no loop).
-          CONFIG__FALLBACK_MODELS: '["minimax-m2.7", "gpt-5.5"]'
+          # all review workflows; enforced by 90_sanity.yml). Single-model direct
+          # MiniMax: fallback == primary == MiniMax-M3 (one retry, no loop).
+          CONFIG__FALLBACK_MODELS: '["MiniMax-M3"]'
           CONFIG__RESPONSE_LANGUAGE: ko
           CONFIG__AI_TIMEOUT: "180"
-          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "1000000"
           # Quality knobs — produce richer review output even on small diffs.
           # See pr_agent/tools/pr_reviewer.py:85-94 for toggle->prompt mapping.
           PR_REVIEWER__REQUIRE_SCORE_REVIEW: "true"

@@ -52,35 +52,34 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Verify cli_proxy connectivity
+      - name: Verify MiniMax connectivity
         env:
-          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
         run: |
           set -e
-          HTTP_CODE=$(curl -sS -o /tmp/cli_proxy_test.json -w '%{http_code}' \
+          HTTP_CODE=$(curl -sS -o /tmp/minimax_test.json -w '%{http_code}' \
             --max-time 15 \
-            https://cliproxy.jclee.me/v1/models \
-            -H "Authorization: Bearer $CLIPROXY_API_KEY")
+            https://api.minimax.io/v1/models \
+            -H "Authorization: Bearer $MINIMAX_API_KEY")
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERROR: cli_proxy returned HTTP $HTTP_CODE"
-            cat /tmp/cli_proxy_test.json
+            echo "ERROR: MiniMax API returned HTTP $HTTP_CODE"
+            cat /tmp/minimax_test.json
             exit 1
           fi
-          MODEL_COUNT=$(python3 -c "import json; print(len(json.load(open('/tmp/cli_proxy_test.json'))['data']))")
-          echo "cli_proxy OK — $MODEL_COUNT models available"
+          echo "MiniMax API OK (HTTP 200)"
 
       - name: Run deep security review
         env:
-          OPENAI__KEY: ${{ secrets.CLIPROXY_API_KEY }}
-          OPENAI__API_BASE: https://cliproxy.jclee.me/v1
-          OPENAI_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
-          OPENAI_BASE_URL: https://cliproxy.jclee.me/v1
+          OPENAI__KEY: ${{ secrets.MINIMAX_API_KEY }}
+          OPENAI__API_BASE: https://api.minimax.io/v1
+          OPENAI_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          OPENAI_BASE_URL: https://api.minimax.io/v1
           LITELLM_LOCAL_MODEL_COST_MAP: "True"
-          CONFIG__MODEL: gpt-5.5
-          CONFIG__FALLBACK_MODELS: '["minimax-m2.7", "gpt-5.5"]'
+          CONFIG__MODEL: MiniMax-M3
+          CONFIG__FALLBACK_MODELS: '["MiniMax-M3"]'
           CONFIG__RESPONSE_LANGUAGE: ko
           CONFIG__AI_TIMEOUT: '300'
-          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "1000000"
           GITHUB__USER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_REVIEWER__REQUIRE_SECURITY_REVIEW: 'true'
           PR_REVIEWER__REQUIRE_TESTS_REVIEW: 'false'
