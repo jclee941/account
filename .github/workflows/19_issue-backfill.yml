@@ -17,9 +17,6 @@ name: Issue Backfill
 # actually mutates labels.
 
 on:
-  schedule:
-    # Daily 09:00 UTC (18:00 KST). Manual dispatch is the primary path.
-    - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

@@ -24,10 +24,6 @@ on:
       - "CI Auto-Heal"
       - "Repository Health Check"
     types: [completed]
-  schedule:
-    # Daily stale-failure-issue sweep: close failure/health issues whose
-    # originating workflow has since recovered (latest master run == success).
-    - cron: "45 5 * * *"  # 05:45 UTC daily (offset from other crons)
   workflow_dispatch:
     inputs:
       workflow_name:
@@ -342,7 +338,7 @@ jobs:
   # This is the safety-net layer for issues the event-driven path missed
   # (missed webhooks, renamed workflows, legacy per-run-id-titled issues).
   sweep:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:

@@ -4,8 +4,6 @@ on:
   # Manual trigger
   workflow_dispatch:
   # Weekly auto-generation (Sundays 00:00 UTC)
-  schedule:
-    - cron: '0 0 * * 0'
   # Trigger when source/config files change on master
   push:
     branches: [master, main]
