@@ -1,5 +1,12 @@
 name: CI Auto-Heal
 on:
+  workflow_run:
+    workflows: ["Sanity", "PR Checks", "Gitleaks", "CodeQL", "actionlint", "E2E Tests", "Downstream Health Check"]
+    types: [completed]
+  check_suite:
+    types: [completed]
+  repository_dispatch:
+    types: [ci-auto-heal]
   workflow_dispatch:
 permissions:
   contents: write
@@ -10,6 +17,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   heal:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'failure'
     runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 30
     name: Cross-repo CI auto-heal
