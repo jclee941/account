@@ -1,7 +1,5 @@
 name: CI Auto-Heal
 on:
-  schedule:
-    - cron: '0 3 * * *'  # Daily 03:00 UTC
   workflow_dispatch:
 permissions:
   contents: write

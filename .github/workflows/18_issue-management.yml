@@ -1,7 +1,5 @@
 name: Issue Management
 on:
-  schedule:
-    - cron: '0 0 * * *'
   issues:
     types: [opened, edited, closed, reopened, labeled, unlabeled, assigned]
   issue_comment:
