@@ -119,8 +119,17 @@ jobs:
           fi
           # GitHub auto-merge only fires once all required status checks pass
           # and the merge box is green. We just enable it; we never bypass.
-          gh pr merge --auto --squash "$PR_URL" \
-            || echo "::warning::auto-merge enable failed (allow_auto_merge disabled, branch protection mismatch, or PR already merged); not retrying"
+          # Tolerate ONLY the "already merged/closed" race; surface every other
+          # failure (allow_auto_merge disabled, branch-protection mismatch) so
+          # the run does not silently report success on a broken automation.
+          if ! err=$(gh pr merge --auto --squash "$PR_URL" 2>&1); then
+            if printf '%s' "$err" | grep -qiE 'already merged|not mergeable: the merge commit cannot be created|pull request is closed|already been merged'; then
+              echo "::notice::auto-merge no-op: PR already merged/closed — $err"
+            else
+              echo "::error::auto-merge enable failed: $err"
+              exit 1
+            fi
+          fi
 
       - name: Self-heal stale BLOCKED PR
         # If checks pass but GitHub reports mergeStateStatus=BLOCKED, the PR's
