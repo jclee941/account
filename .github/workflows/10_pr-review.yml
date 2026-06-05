@@ -125,8 +125,9 @@ jobs:
           PR_REVIEW_DEBUG: ${{ vars.PR_REVIEW_DEBUG || '0' }}
           CONFIG__MODEL: ${{ matrix.model }}
           # Canonical fallback chain (matches .pr_agent.toml + configuration.toml +
-          # all review workflows; enforced by 90_sanity.yml). litellm skips the
-          # matrix.model if it already failed as primary, so listing it is harmless.
+          # all review workflows; enforced by 90_sanity.yml). If matrix.model also
+          # appears here, it may be retried once as part of the finite fallback
+          # list; this is harmless but not deduplicated (no loop).
           CONFIG__FALLBACK_MODELS: '["minimax-m2.7", "gpt-5.5"]'
           CONFIG__RESPONSE_LANGUAGE: ko
           CONFIG__AI_TIMEOUT: "180"
