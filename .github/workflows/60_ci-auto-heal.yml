@@ -1,7 +1,7 @@
 name: CI Auto-Heal
 on:
   workflow_run:
-    workflows: ["Sanity", "PR Checks", "Gitleaks", "CodeQL", "actionlint", "E2E Tests", "Downstream Health Check"]
+    workflows: ["Sanity", "PR Checks", "Gitleaks", "CodeQL", "actionlint", "E2E Tests", "Downstream Health Check", "Release Publish", "Scorecard supply-chain security"]
     types: [completed]
   check_suite:
     types: [completed]

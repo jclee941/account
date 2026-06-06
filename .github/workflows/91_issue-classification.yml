@@ -10,7 +10,7 @@ name: Issue Classification
 #   * resolved-from-signal      — on edits/comments carrying an explicit
 #                                 "fixed/resolved" signal, label `resolved`
 #                                 (close only when opted in).
-#   * resolved-sweep            — scheduled sweep: open issues whose linked PR is
+#   * resolved-sweep            — manual sweep (workflow_dispatch): open issues whose linked PR is
 #                                 already merged get labeled/closed.
 #
 # All pure logic lives in `.github/scripts/issue-classifier.cjs` (unit-tested via
@@ -78,7 +78,7 @@ env:
   DUPLICATE_CLOSE_THRESHOLD: ${{ inputs.duplicate_close_threshold || '0.86' }}
   CLOSE_DUPLICATES: ${{ inputs.close_duplicates || 'false' }}
   # Default ON. Only a workflow_dispatch run that explicitly sets the input to
-  # false may disable it; on issues/PR/schedule events `inputs` is absent and we
+  # false may disable it; on issues/PR events `inputs` is absent and we
   # must NOT let empty-string coerce to false.
   CLOSE_RESOLVED_BY_PR: ${{ github.event_name == 'workflow_dispatch' && inputs.close_resolved_by_pr == false && 'false' || 'true' }}
   CLOSE_RESOLVED_BY_SIGNAL: ${{ inputs.close_resolved_by_signal || 'false' }}
