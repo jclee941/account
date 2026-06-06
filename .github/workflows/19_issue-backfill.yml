@@ -17,10 +17,11 @@ name: Issue Backfill
 # actually mutates labels.
 
 on:
-  issues:
-    types: [opened, edited, reopened, labeled, unlabeled]
+  # NOTE: not triggered by `issues:` nor by Issue Management/Classification —
+  # 19 ADDS the in-progress label, which would re-fire those issue workflows
+  # and loop. Driven by a master-activity pulse (Sanity) + manual dispatch.
   workflow_run:
-    workflows: ["Issue Management", "Issue Classification"]
+    workflows: ["Sanity"]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -70,7 +71,10 @@ jobs:
           # the backfill silently completes without triggering branch
           # creation.
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run == false && 'false' || 'true' }}
+          # Mutate ONLY on an explicit manual dispatch with dry_run=false.
+          # Any event-driven (workflow_run) run is always dry-run so it can
+          # never add labels (which would re-trigger issue workflows / loop).
+          DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) && 'false' || 'true' }}
           MIN_AGE_DAYS: ${{ inputs.min_age_days || '5' }}
           MAX_PICKS: ${{ inputs.max_picks || '3' }}
           LABEL: ${{ inputs.label || 'in-progress' }}
@@ -81,9 +85,14 @@ jobs:
           THRESHOLD=$((NOW - MIN_AGE_DAYS * 86400))
           SKIP_LABELS="wontfix duplicate invalid bot-review ci-failure automated dependencies"
           # Pre-fetch open issues; up to 100 per page is fine for our repos.
-          gh issue list --repo "$REPO" --state open --limit 100 \
+          # Tolerate transient API failures (rate limit, 5xx): warn and skip this
+          # run rather than failing the workflow (event-driven runs are frequent).
+          if ! gh issue list --repo "$REPO" --state open --limit 100 \
             --json number,title,updatedAt,labels,assignees \
-            > /tmp/issues.json
+            > /tmp/issues.json 2>/tmp/issues.err; then
+            echo "::warning::issue-backfill: gh issue list failed for $REPO (likely transient/rate-limit); skipping this run. $(cat /tmp/issues.err)"
+            exit 0
+          fi
           PICKED=0
           {
             echo "## Issue Backfill Candidates ($REPO)"
