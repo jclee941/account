@@ -100,7 +100,7 @@ jobs:
         with:
           fetch-depth: 1
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: LLM duplicate decision (DP-3)
@@ -395,7 +395,7 @@ jobs:
         with:
           fetch-depth: 1
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: LLM resolved-signal decision (DP-4)
