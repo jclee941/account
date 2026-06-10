@@ -129,7 +129,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: ./.github/actions/setup-python-compatible
         with:
           python-version: '3.12'
 
