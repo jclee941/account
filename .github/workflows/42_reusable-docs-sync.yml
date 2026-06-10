@@ -113,6 +113,13 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Checkout local actions (workspace root)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
       - name: Checkout PR
         uses: actions/checkout@v6
         with:

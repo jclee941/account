@@ -36,7 +36,7 @@ runs:
         PY_VERSION="${{ inputs.python-version }}"
         VENV_DIR="${RUNNER_TEMP:-/tmp}/setup-python-compatible-${PY_VERSION}"
         uv python install "${PY_VERSION}"
-        uv venv --python "${PY_VERSION}" "${VENV_DIR}"
+        uv venv --seed --python "${PY_VERSION}" "${VENV_DIR}"
         echo "${VENV_DIR}/bin" >> "${GITHUB_PATH}"
         echo "VIRTUAL_ENV=${VENV_DIR}" >> "${GITHUB_ENV}"
         "${VENV_DIR}/bin/python" --version
