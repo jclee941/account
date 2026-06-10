@@ -45,7 +45,7 @@ jobs:
         with:
           go-version: '1.21'
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: ./.github/actions/setup-python-compatible
         with:
           python-version: '3.12'
 

@@ -1,0 +1,42 @@
+name: Set up compatible Python
+description: >-
+  Set up Python on both GitHub-hosted Ubuntu runners and self-hosted Debian
+  runners. actions/setup-python only ships prebuilt CPython for GitHub-hosted
+  Ubuntu; on a self-hosted Debian runner it fails ("version '3.12' ... was not
+  found for Debian 12"). This action branches on runner.environment and uses uv
+  to install a managed Python + venv on self-hosted runners, exposing it on
+  PATH so downstream `python`/`pip` steps work unchanged.
+
+inputs:
+  python-version:
+    description: Python version to install
+    required: false
+    default: "3.12"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python (GitHub-hosted)
+      if: runner.environment == 'github-hosted'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Set up uv (self-hosted)
+      if: runner.environment == 'self-hosted'
+      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      with:
+        enable-cache: true
+
+    - name: Install Python via uv (self-hosted)
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      run: |
+        set -eu
+        PY_VERSION="${{ inputs.python-version }}"
+        VENV_DIR="${RUNNER_TEMP:-/tmp}/setup-python-compatible-${PY_VERSION}"
+        uv python install "${PY_VERSION}"
+        uv venv --python "${PY_VERSION}" "${VENV_DIR}"
+        echo "${VENV_DIR}/bin" >> "${GITHUB_PATH}"
+        echo "VIRTUAL_ENV=${VENV_DIR}" >> "${GITHUB_ENV}"
+        "${VENV_DIR}/bin/python" --version
