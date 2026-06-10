@@ -24,8 +24,9 @@ Thank you for your interest in contributing! This project follows standard open-
 ### Automated Checks
 
 All PRs are automatically checked by:
-- **pr-checks.yml**: PR size, title, branch name validation
-- **gitleaks.yml**: Secret scanning
+
+- **03_pr-checks.yml**: PR size, title, branch name validation
+- **05_gitleaks.yml**: Secret scanning
 - **jclee-bot**: AI code review (Korean responses)
 
 ---
@@ -52,6 +53,7 @@ All PRs are automatically checked by:
 ### 자동화 검증
 
 모든 PR은 다음 자동 검증을 통과해야 합니다:
-- **pr-checks.yml**: PR 크기, 제목, 브랜치 이름 검증
-- **gitleaks.yml**: 민감정보 스캔
+
+- **03_pr-checks.yml**: PR 크기, 제목, 브랜치 이름 검증
+- **05_gitleaks.yml**: 민감정보 스캔
 - **jclee-bot**: AI 코드 리뷰 (한국어 응답)
