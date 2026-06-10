@@ -33,6 +33,14 @@ jobs:
       - name: Check out base branch
         uses: actions/checkout@v6
 
+      - name: Check out pr-agent source from jclee941/.github
+        uses: actions/checkout@v6
+        with:
+          repository: jclee941/.github
+          ref: master
+          path: pr-agent-src
+          fetch-depth: 1
+
       - name: Set up Python 3.12
         uses: ./.github/actions/setup-python-compatible
         with:
@@ -42,15 +50,19 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-sec-${{ hashFiles('pyproject.toml', 'requirements.txt') }}
+          key: ${{ runner.os }}-pip-sec-${{ hashFiles('pr-agent-src/pyproject.toml', 'pr-agent-src/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-sec-
             ${{ runner.os }}-pip-
 
       - name: Install pr-agent
+        working-directory: pr-agent-src
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .
+          # Use the venv that setup-python-compatible put on PATH (self-hosted
+          # Debian lacks python3-venv/ensurepip, so `python3 -m venv` fails).
+          python -m venv .venv || uv venv --seed .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e .
 
       - name: Verify MiniMax connectivity
         env:
@@ -69,6 +81,7 @@ jobs:
           echo "MiniMax API OK (HTTP 200)"
 
       - name: Run deep security review
+        working-directory: pr-agent-src
         env:
           OPENAI__KEY: ${{ secrets.MINIMAX_API_KEY }}
           OPENAI__API_BASE: https://api.minimax.io/v1
@@ -110,7 +123,7 @@ jobs:
             PR 설명은 한국어로, 보안 관점에서 작성하십시오.
             이 변경이 공격 표면에 미치는 영향을 명시하십시오.
         run: |
-          python -m pr_agent.servers.github_action_runner
+          .venv/bin/python -m pr_agent.servers.github_action_runner
       - name: Notify on failure
         if: failure()
         uses: ./.github/actions/notify-on-failure
