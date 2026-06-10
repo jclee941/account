@@ -52,10 +52,10 @@ jobs:
           path: pr-agent-src
           fetch-depth: 1
 
-      - name: Set up Python
-        run: |
-          python3 --version
-          which python3
+      - name: Set up Python 3.12
+        uses: ./.github/actions/setup-python-compatible
+        with:
+          python-version: '3.12'
 
       - name: Cache pip dependencies
         uses: actions/cache@v5
@@ -68,7 +68,9 @@ jobs:
       - name: Install pr-agent
         working-directory: pr-agent-src
         run: |
-          python3 -m venv .venv
+          # Use the venv that setup-python-compatible put on PATH (self-hosted
+          # Debian lacks python3-venv/ensurepip, so `python3 -m venv` fails).
+          python -m venv .venv || uv venv --seed .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install -e .
 
