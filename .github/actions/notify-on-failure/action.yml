@@ -1,0 +1,69 @@
+name: Notify on failure
+description: >-
+  Create or comment on a deduplicated GitHub issue when a workflow step fails.
+  De-dupes by (workflow name, head sha) so re-runs and matrix legs share a
+  single issue rather than fanning out new ones per run.
+
+inputs:
+  title:
+    description: Issue title (default = "[ci-fail] <workflow> @ <short_sha>")
+    required: false
+    default: ''
+  body:
+    description: Issue body markdown (default includes workflow + run link)
+    required: false
+    default: ''
+  labels:
+    description: Comma-separated extra labels to add (always combined with `ci-failure`)
+    required: false
+    default: ''
+  github-token:
+    description: Token used to read/write issues
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create or update failure issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_TITLE: ${{ inputs.title }}
+        INPUT_BODY: ${{ inputs.body }}
+        INPUT_LABELS: ${{ inputs.labels }}
+        WF_NAME: ${{ github.workflow }}
+        HEAD_SHA: ${{ github.sha }}
+        RUN_ID: ${{ github.run_id }}
+        SERVER_URL: ${{ github.server_url }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -eu
+        SHORT_SHA="${HEAD_SHA:0:8}"
+        TITLE="${INPUT_TITLE:-[ci-fail] $WF_NAME @ $SHORT_SHA}"
+        RUN_URL="$SERVER_URL/$REPO/actions/runs/$RUN_ID"
+        BODY="${INPUT_BODY:-$WF_NAME workflow failed on \`$HEAD_SHA\`. See [run logs]($RUN_URL).}"
+
+        # Dedup: look for an open issue with the SAME title.
+        EXISTING=$(gh issue list --repo "$REPO" \
+          --state open --label ci-failure \
+          --json number,title \
+          --jq ".[] | select(.title == \"$TITLE\") | .number" 2>/dev/null | head -1 || true)
+
+        if [ -n "$EXISTING" ]; then
+          gh issue comment "$EXISTING" --repo "$REPO" \
+            --body "Another failure: $RUN_URL" \
+            || echo "::warning::failed to add dedup comment on #$EXISTING"
+          echo "::notice::Reused existing ci-failure issue #$EXISTING"
+        else
+          gh label create ci-failure --color B60205 --description "Auto-managed by notify-on-failure" 2>/dev/null || true
+          LABEL_ARG="ci-failure"
+          if [ -n "$INPUT_LABELS" ]; then
+            LABEL_ARG="$LABEL_ARG,$INPUT_LABELS"
+          fi
+          gh issue create --repo "$REPO" \
+            --title "$TITLE" \
+            --body "$BODY" \
+            --label "$LABEL_ARG" \
+            || echo "::warning::failed to create ci-failure issue (non-fatal)"
+        fi
