@@ -25,13 +25,32 @@ runs:
         nas_base="/mnt/nas-cache"
         local_base="${RUNNER_TEMP:-/tmp}/gha-cache"
 
-        # Prefer the NAS mount; degrade to a local path if it is missing or
-        # not writable so a broken mount never hard-fails the build.
-        if [ -d "$nas_base" ] && [ -w "$nas_base" ]; then
-          base="$nas_base"
+        # Prefer the NAS mount; self-heal its permissions if needed (a freshly
+        # provisioned NFS volume is root-owned, but the runner is non-root).
+        # Degrade to a local path only if the NAS mount is truly unusable, so a
+        # broken mount never hard-fails the build.
+        base="$local_base"
+        if [ -d "$nas_base" ]; then
+          probe="$nas_base/.write-probe.$$"
+          if (mkdir -p "$nas_base/$runner_slug" && touch "$probe") >/dev/null 2>&1; then
+            rm -f "$probe"
+            base="$nas_base"
+          elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+            # Self-heal: claim the cache tree for the runner user once.
+            if sudo mkdir -p "$nas_base" \
+               && sudo chown "$(id -u):$(id -g)" "$nas_base" \
+               && sudo chmod 0775 "$nas_base" \
+               && touch "$probe" >/dev/null 2>&1; then
+              rm -f "$probe"
+              base="$nas_base"
+              echo "build cache: self-healed NAS mount permissions on $nas_base"
+            fi
+          fi
+        fi
+
+        if [ "$base" = "$nas_base" ]; then
           echo "build cache: using NAS mount $nas_base"
         else
-          base="$local_base"
           echo "::warning::NAS mount $nas_base unavailable/unwritable; falling back to $local_base"
         fi
 
