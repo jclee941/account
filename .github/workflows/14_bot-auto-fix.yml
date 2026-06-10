@@ -51,6 +51,12 @@ jobs:
 
       - name: Run naming validator with --fix
         id: fix
+        env:
+          # The self-hosted runner has HOME unset, so `go env` fails with
+          # "GOCACHE is not defined and neither $XDG_CACHE_HOME nor $HOME are
+          # defined". Provide cache dirs explicitly.
+          GOCACHE: ${{ runner.temp }}/go-build
+          GOMODCACHE: ${{ runner.temp }}/go-mod
         run: |
           set -eu
           echo "Running validate-naming --fix..."
