@@ -98,8 +98,14 @@ jobs:
             echo "::error::Invalid conclusion: $CONCLUSION (must be success, failure, cancelled, or skipped)"
             exit 1
           fi
-          # For cancelled/skipped, treat as failure for issue creation purposes
-          if [[ "$CONCLUSION" == "cancelled" || "$CONCLUSION" == "skipped" ]]; then
+          # 'skipped' is NOT a failure: workflows like CI Auto-Heal have
+          # `if: ... conclusion == 'failure'` and legitimately skip when upstream
+          # succeeded. Treat it like success (close stale issues, create none).
+          if [[ "$CONCLUSION" == "skipped" ]]; then
+            CONCLUSION="success"
+          fi
+          # A cancelled run is treated as a failure for issue-creation purposes.
+          if [[ "$CONCLUSION" == "cancelled" ]]; then
             CONCLUSION="failure"
           fi
 
