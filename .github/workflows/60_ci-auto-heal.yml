@@ -31,6 +31,12 @@ jobs:
           terraform version 2>/dev/null || echo "terraform not available"
           node --version
           go version 2>/dev/null || echo "go not available"
+      - name: Checkout local actions (workspace root)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
       - name: Checkout decision helper
         uses: actions/checkout@v6
         with:
