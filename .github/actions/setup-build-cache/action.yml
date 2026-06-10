@@ -1,0 +1,69 @@
+name: Set up build cache
+description: >-
+  Route build caches (Go, pip, uv, npm, Docker buildx) to the NFS-backed mount
+  (/mnt/nas-cache) on self-hosted runners, and give HOME a stable LOCAL path.
+  The self-hosted LXC runner has HOME unset and a small 32G rootfs, so build
+  caches were ephemeral and disk-pressuring. Caches go to NAS; HOME stays local
+  (RUNNER_TEMP) to avoid persisting credentials/git/ssh state and NFS locking.
+  On GitHub-hosted runners this is a no-op (existing actions/cache flow is kept).
+
+runs:
+  using: composite
+  steps:
+    - name: Configure NAS-backed build cache (self-hosted only)
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      run: |
+        set -eu
+
+        slug() {
+          printf '%s' "$1" | tr '/:@ ' '____' | tr -cd 'A-Za-z0-9._-'
+        }
+        runner_slug="$(slug "${RUNNER_NAME:-self-hosted}")"
+        repo_slug="$(slug "${GITHUB_REPOSITORY:-unknown-repo}")"
+
+        nas_base="/mnt/nas-cache"
+        local_base="${RUNNER_TEMP:-/tmp}/gha-cache"
+
+        # Prefer the NAS mount; degrade to a local path if it is missing or
+        # not writable so a broken mount never hard-fails the build.
+        if [ -d "$nas_base" ] && [ -w "$nas_base" ]; then
+          base="$nas_base"
+          echo "build cache: using NAS mount $nas_base"
+        else
+          base="$local_base"
+          echo "::warning::NAS mount $nas_base unavailable/unwritable; falling back to $local_base"
+        fi
+
+        cache_root="$base/$runner_slug/$repo_slug"
+        # HOME stays LOCAL (never on NAS) to avoid persisting secrets/git/ssh
+        # state and NFS lock contention. This also fixes the unset-HOME bug.
+        home_dir="${RUNNER_TEMP:-/tmp}/gha-home"
+
+        mkdir -p \
+          "$home_dir" \
+          "$cache_root/go-build" \
+          "$cache_root/go-mod" \
+          "$cache_root/pip" \
+          "$cache_root/uv" \
+          "$cache_root/npm" \
+          "$cache_root/xdg" \
+          "$cache_root/tmp" \
+          "$cache_root/docker-buildx" \
+          "$cache_root/docker-buildx-new"
+
+        {
+          echo "HOME=$home_dir"
+          echo "CACHE_ROOT=$cache_root"
+          echo "GOCACHE=$cache_root/go-build"
+          echo "GOMODCACHE=$cache_root/go-mod"
+          echo "PIP_CACHE_DIR=$cache_root/pip"
+          echo "UV_CACHE_DIR=$cache_root/uv"
+          echo "npm_config_cache=$cache_root/npm"
+          echo "XDG_CACHE_HOME=$cache_root/xdg"
+          echo "TMPDIR=$cache_root/tmp"
+          echo "DOCKER_BUILDX_CACHE=$cache_root/docker-buildx"
+          echo "DOCKER_BUILDX_CACHE_NEW=$cache_root/docker-buildx-new"
+        } >> "$GITHUB_ENV"
+
+        echo "build cache root: $cache_root (HOME=$home_dir)"

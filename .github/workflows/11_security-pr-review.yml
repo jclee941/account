@@ -41,6 +41,9 @@ jobs:
           path: pr-agent-src
           fetch-depth: 1
 
+      - name: Set up build cache (NAS-backed on self-hosted)
+        uses: ./.github/actions/setup-build-cache
+
       - name: Set up Python 3.12
         uses: ./.github/actions/setup-python-compatible
         with:
@@ -49,7 +52,7 @@ jobs:
       - name: Cache pip dependencies
         uses: actions/cache@v5
         with:
-          path: ~/.cache/pip
+          path: ${{ env.PIP_CACHE_DIR || '~/.cache/pip' }}
           key: ${{ runner.os }}-pip-sec-${{ hashFiles('pr-agent-src/pyproject.toml', 'pr-agent-src/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-sec-

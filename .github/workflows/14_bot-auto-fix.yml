@@ -40,6 +40,9 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
 
+      - name: Set up build cache (NAS-backed on self-hosted)
+        uses: ./.github/actions/setup-build-cache
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -52,11 +55,11 @@ jobs:
       - name: Run naming validator with --fix
         id: fix
         env:
-          # The self-hosted runner has HOME unset, so `go env` fails with
-          # "GOCACHE is not defined and neither $XDG_CACHE_HOME nor $HOME are
-          # defined". Provide cache dirs explicitly.
-          GOCACHE: ${{ runner.temp }}/go-build
-          GOMODCACHE: ${{ runner.temp }}/go-mod
+          # GOCACHE/GOMODCACHE come from setup-build-cache (NAS-backed on
+          # self-hosted, local fallback otherwise). Keep an explicit fallback
+          # to runner.temp in case the cache step was skipped.
+          GOCACHE: ${{ env.GOCACHE || format('{0}/go-build', runner.temp) }}
+          GOMODCACHE: ${{ env.GOMODCACHE || format('{0}/go-mod', runner.temp) }}
         run: |
           set -eu
           echo "Running validate-naming --fix..."
