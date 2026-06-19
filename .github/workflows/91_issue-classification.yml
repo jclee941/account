@@ -106,7 +106,7 @@ jobs:
           ref: master
           path: .jclee-bot-source
       - name: Set up Python 3.12
-        uses: ./.github/actions/setup-python-compatible
+        uses: ./.jclee-bot-source/.github/actions/setup-python-compatible
         with:
           python-version: '3.12'
       - name: LLM duplicate decision (DP-3)
@@ -269,7 +269,7 @@ jobs:
             }
       - name: Notify on failure
         if: failure()
-        uses: ./.github/actions/notify-on-failure
+        uses: ./.jclee-bot-source/.github/actions/notify-on-failure
 
   resolved-from-merged-pr:
     name: Resolved by merged PR
@@ -390,7 +390,7 @@ jobs:
             }
       - name: Notify on failure
         if: failure()
-        uses: ./.github/actions/notify-on-failure
+        uses: ./.jclee-bot-source/.github/actions/notify-on-failure
 
   resolved-from-signal:
     name: Resolved by text signal
@@ -413,7 +413,7 @@ jobs:
           ref: master
           path: .jclee-bot-source
       - name: Set up Python 3.12
-        uses: ./.github/actions/setup-python-compatible
+        uses: ./.jclee-bot-source/.github/actions/setup-python-compatible
         with:
           python-version: '3.12'
       - name: LLM resolved-signal decision (DP-4)
@@ -567,7 +567,7 @@ jobs:
             }
       - name: Notify on failure
         if: failure()
-        uses: ./.github/actions/notify-on-failure
+        uses: ./.jclee-bot-source/.github/actions/notify-on-failure
 
   resolved-sweep:
     name: Manual resolved sweep
@@ -702,4 +702,4 @@ jobs:
             core.info(`Sweep scanned ${processed} merged PR(s).`);
       - name: Notify on failure
         if: failure()
-        uses: ./.github/actions/notify-on-failure
+        uses: ./.jclee-bot-source/.github/actions/notify-on-failure
