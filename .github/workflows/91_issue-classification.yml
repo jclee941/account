@@ -88,7 +88,7 @@ jobs:
   duplicate-classification:
     name: Duplicate detection
     if: github.event_name == 'issues' && contains(fromJson('["opened", "edited", "reopened"]'), github.event.action)
-    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Harden Runner
@@ -274,7 +274,7 @@ jobs:
   resolved-from-merged-pr:
     name: Resolved by merged PR
     if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
-    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Harden Runner
@@ -395,7 +395,7 @@ jobs:
   resolved-from-signal:
     name: Resolved by text signal
     if: (github.event_name == 'issues' && contains(fromJson('["edited", "reopened"]'), github.event.action)) || (github.event_name == 'issue_comment' && github.event.action == 'created')
-    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Harden Runner
@@ -572,7 +572,7 @@ jobs:
   resolved-sweep:
     name: Manual resolved sweep
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ${{ github.repository_visibility == 'private' && 'self-hosted' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Harden Runner
