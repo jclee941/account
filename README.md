@@ -1,5 +1,18 @@
 # 계정 자동화 워크스페이스
 
+<!-- jclee-bot-automation-status:start -->
+## GitHub Automation Status / GitHub 자동화 현황
+
+Current as of 2026-06-19.
+
+- Primary PR review/checks and issue maintenance run through the `jclee-bot` GitHub App.
+- Issue automation includes opened-issue labels, stale-label removal, stale issue sweep/close, and issue-summary upkeep.
+- Existing `.github/workflows` files are compatibility GitOps surfaces managed from `jclee941/.github`; do not treat legacy per-repo workflow counts as the production bot rollout path.
+- Source of truth: `jclee941/.github` (`config/repos.yaml`, `jclee_bot/`, and central workflows).
+
+<!-- jclee-bot-automation-status:end -->
+
+
 Gmail 계정 생성, Antigravity IDE 인증, OAuth 자격 증명 관리를 위한 Node.js ESM 워크스페이스. 브라우저 자동화에는 Playwright/Rebrowser를 사용하고, SMS 인증에는 5sim을 사용합니다.
 
 ## 기능
