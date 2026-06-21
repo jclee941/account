@@ -162,7 +162,7 @@ jobs:
           echo "Picked $PICKED candidates."
       - name: Checkout (for composite action resolution)
         if: failure()
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - name: Notify on failure
