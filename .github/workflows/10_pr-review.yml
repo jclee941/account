@@ -39,13 +39,13 @@ jobs:
         with:
           egress-policy: audit
       - name: Checkout local actions
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: jclee941/.github
           ref: master
           fetch-depth: 1
       - name: Check out pr-agent source from jclee941/.github
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: jclee941/.github
           ref: master

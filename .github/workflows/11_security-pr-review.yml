@@ -31,10 +31,10 @@ jobs:
         with:
           egress-policy: audit
       - name: Check out base branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Check out pr-agent source from jclee941/.github
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: jclee941/.github
           ref: master

@@ -32,13 +32,13 @@ jobs:
           node --version
           go version 2>/dev/null || echo "go not available"
       - name: Checkout local actions (workspace root)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: false
           fetch-depth: 1
       - name: Checkout decision helper
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: _bot-scripts
           fetch-depth: 1
@@ -224,7 +224,7 @@ jobs:
           echo "Issues created: $ISSUE_COUNT"
       - name: Checkout (for composite action resolution)
         if: failure()
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - name: Notify on failure

@@ -35,14 +35,14 @@ jobs:
       # Default-path checkout MUST come first: actions/checkout cleans the
       # workspace root, which would wipe a previously-checked-out subdir.
       - name: Checkout local actions
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: jclee941/.github
           ref: master
           fetch-depth: 1
 
       - name: Checkout repository inventory
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: jclee941/.github
           path: .github-inventory
