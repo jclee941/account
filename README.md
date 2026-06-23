@@ -1,263 +1,269 @@
 # 계정 자동화 워크스페이스 / Account Automation Workspace
 
-[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
-[![Issue → Branch](../../actions/workflows/02_issue-to-branch.yml/badge.svg)](../../actions/workflows/02_issue-to-branch.yml)
-[![Branch → PR](../../actions/workflows/01_branch-to-pr.yml/badge.svg)](../../actions/workflows/01_branch-to-pr.yml)
-[![PR Review](../../actions/workflows/10_pr-review.yml/badge.svg)](../../actions/workflows/10_pr-review.yml)
-[![Security PR Review](../../actions/workflows/11_security-pr-review.yml/badge.svg)](../../actions/workflows/11_security-pr-review.yml)
-[![Dependabot Auto-Merge](../../actions/workflows/12_dependabot-auto-merge.yml/badge.svg)](../../actions/workflows/12_dependabot-auto-merge.yml)
-[![PR Auto-Merge](../../actions/workflows/13_pr-auto-merge.yml/badge.svg)](../../actions/workflows/13_pr-auto-merge.yml)
-[![Bot Auto-Fix](../../actions/workflows/14_bot-auto-fix.yml/badge.svg)](../../actions/workflows/14_bot-auto-fix.yml)
-[![Release Publish](../../actions/workflows/25_release-publish.yml/badge.svg)](../../actions/workflows/25_release-publish.yml)
+[![CI](./actions/workflows/ci.yml/badge.svg)](./actions/workflows/ci.yml)
+[![Issue → Branch](./actions/workflows/02_issue-to-branch.yml/badge.svg)](./actions/workflows/02_issue-to-branch.yml)
+[![Branch → PR](./actions/workflows/01_branch-to-pr.yml/badge.svg)](./actions/workflows/01_branch-to-pr.yml)
+[![PR Review](./actions/workflows/10_pr-review.yml/badge.svg)](./actions/workflows/10_pr-review.yml)
+[![Security PR Review](./actions/workflows/11_security-pr-review.yml/badge.svg)](./actions/workflows/11_security-pr-review.yml)
+[![Dependabot Auto-Merge](./actions/workflows/12_dependabot-auto-merge.yml/badge.svg)](./actions/workflows/12_dependabot-auto-merge.yml)
+[![PR Auto-Merge](./actions/workflows/13_pr-auto-merge.yml/badge.svg)](./actions/workflows/13_pr-auto-merge.yml)
+[![Bot Auto-Fix](./actions/workflows/14_bot-auto-fix.yml/badge.svg)](./actions/workflows/14_bot-auto-fix.yml)
+[![Release Publish](./actions/workflows/25_release-publish.yml/badge.svg)](./actions/workflows/25_release-publish.yml)
 
 > README 생성 모델 / README generation model: `gpt-5.5` · fallback: `minimax-m3` via [`https://cliproxy.jclee.me/v1`](https://cliproxy.jclee.me)
+>
+> 외부 링크 정책 / external link policy: only [`qodo-ai/pr-agent`](https://github.com/qodo-ai/pr-agent), [`cliproxy.jclee.me`](https://cliproxy.jclee.me), [`bot.jclee.me`](https://bot.jclee.me).
 
 ---
 
 ## 1. 개요 / Overview
 
-이 저장소는 **Gmail 계정 생성, OAuth 인증 흐름, Antigravity IDE 인증·토큰 주입, OpenAI 계정 점검·생성 보조** 작업을 위한 Node.js ESM 기반 자동화 워크스페이스입니다. Playwright / Rebrowser, Chrome DevTools Protocol(CDP), ADB, Appium, MCP(Model Context Protocol) 서버, 그리고 모듈형 SMS provider 추상화(5sim, sms-activate 등)를 단일 저장소에서 결합합니다.
+이 저장소는 **Gmail 계정 생성, OAuth 인증 흐름, Antigravity IDE 인증·토큰 주입, OpenAI 계정 점검·생성 보조** 작업을 위한 **Node.js ESM** 자동화 워크스페이스입니다. **Playwright / Rebrowser**, **Chrome DevTools Protocol(CDP)**, **ADB**, **Appium**, **MCP(Model Context Protocol) 서버**, 그리고 모듈형 **SMS provider 추상화**(5sim, sms-activate 등)를 단일 워크스페이스에서 결합합니다.
 
-This repository is a **Node.js ESM** automation workspace for **Gmail account creation**, **OAuth credential flows**, **Antigravity IDE authentication / token injection**, and **OpenAI account inspection / creation helpers**. It unifies **Playwright / Rebrowser**, the **Chrome DevTools Protocol (CDP)**, **ADB**, **Appium**, an **MCP (Model Context Protocol) server**, and a modular **SMS provider abstraction** (5sim, sms-activate, …) inside a single workspace, with CSV-backed state and JSON run artifacts for downstream automation owned by `jclee-bot`.
+This repository is a **Node.js ESM** automation workspace for **Gmail account creation**, **OAuth credential flows**, **Antigravity IDE authentication / token injection**, and **OpenAI account inspection / creation helpers**. It unifies **Playwright / Rebrowser**, the **Chrome DevTools Protocol (CDP)**, **ADB**, **Appium**, an **MCP (Model Context Protocol) server**, and a modular **SMS provider abstraction** (5sim, sms-activate, …) inside a single workspace.
+
+The repository is operated by the **jclee-bot** GitHub App, which is the single owner of every mutating automation surface (issues, PRs, releases, downstream health). The 14 workflow files under `.github/workflows/` are only event adapters that jclee-bot consumes — they are *not* the source of truth for automation policy.
+
+### 1.1 핵심 사용 사례 / Key use cases
+
+- Headless 브라우저로 Gmail 가입 플로우를 실행하고 5sim 등 SMS provider로 인증 코드를 수신 (`account/`).
+- Antigravity IDE의 OAuth 동의 + SMS 인증을 종단간으로 조율하고 VSCDB에 토큰을 주입 (`antigravity/`).
+- GCP OAuth client secret / refresh token 발급 (`oauth/`).
+- OpenAI 계정 상태 점검 및 신규 계정 생성 보조 (`openai/`).
+- mcphub 같은 MCP 호스트에서 호출 가능한 도구 기반 계정 생성 서버 (`account/gmail-creator-mcp.mjs`, `openai/openai-creator-mcp.mjs`).
+- GitHub 이슈 / PR / 릴리스 / 다운스트림 헬스체크 라이프사이클을 jclee-bot이 단독 소유.
 
 ---
 
 ## 2. 주요 기능 / Features
 
-- **Gmail 계정 생성 파이프라인** — `account/create-accounts.mjs` 본 스크립트와 ADB / CDP / Appium 변형(`create-accounts-adb.mjs`, `create-accounts-cdp.mjs`, `create-accounts-appium.mjs`)을 통해 데스크톱·Android 양쪽 흐름을 지원합니다.
-- **MCP 서버** — `account/gmail-creator-mcp.mjs`가 4개의 tool(`create_accounts`, `get_creation_job`, `list_accounts`, `get_account_status`)을 노출하여 mcphub 같은 MCP 클라이언트에서 도구 기반으로 호출할 수 있습니다.
-- **Antigravity IDE 인증** — `antigravity/` 디렉터리의 OAuth + SMS 인증 파이프라인, VSCDB protobuf 토큰 주입, 5sim SMS 기반 feature unlock 스크립트.
-- **OAuth 자격 증명 자동화** — `oauth/oauth-login.mjs`, `oauth/setup-gcp-oauth.mjs`, `lib/oauth-callback-server.mjs`로 GCP OAuth 클라이언트 생성·로그인 콜백을 자동화합니다.
-- **OpenAI 계정 점검·생성 보조** — `openai/` 디렉터리의 `check-accounts.mjs`, `create-accounts.mjs`, `openai-creator-mcp.mjs`로 OpenAI 계정 상태 확인 및 생성을 보조합니다.
-- **모듈형 SMS provider** — `lib/sms-provider.mjs` 하나로 5sim, sms-activate 등 복수 provider를 추상화하고, `lib/verification-pipeline.mjs`로 3단계 인증 파이프라인을 제공합니다.
-- **인간형 행동 프로파일** — `lib/behavior-profile.mjs`(타이핑·마우스 시뮬레이션), `lib/fingerprint-config.mjs`(브라우저 핑거프린트), `lib/proxy-config.mjs` + `proxy-forwarder.mjs` + `proxy-relay.mjs` + `free-proxy.mjs`(프록시 우회)로 디텍션 저항성을 강화합니다.
-- **테스트 스위트** — `tests/gmail-creator-mcp-smoke.mjs`(29개 단언)와 `tests/qa-manual.mjs`(6개 수동 QA) 스모크 테스트로 회귀를 방지합니다.
+- **다중 트랜스포트 계정 생성 / Multi-transport account creation**
+  - `account/create-accounts.mjs` — 기본 Playwright / Rebrowser 플로우.
+  - `account/create-accounts-cdp.mjs` — CDP + ReDroid WebView.
+  - `account/create-accounts-adb.mjs` — ADB + Android Chrome.
+  - `account/create-accounts-appium.mjs` — Appium + Docker Android.
+- **MCP 서버 / MCP servers**
+  - `account/gmail-creator-mcp.mjs` — 4 tools: `create_accounts`, `get_creation_job`, `list_accounts`, `get_account_status`.
+  - `openai/openai-creator-mcp.mjs` — OpenAI 계정 작업용 MCP 표면.
+  - `tests/gmail-creator-mcp-smoke.mjs` — 29-assertion 스모크 스위트.
+- **모듈형 SMS provider / Modular SMS provider**
+  - `lib/sms-provider.mjs` — 5sim / sms-activate 어댑터 추상화.
+  - [`docs/ALTERNATIVE-SMS-PROVIDERS.md`](./docs/ALTERNATIVE-SMS-PROVIDERS.md)에 대안 벤더 노출 정보.
+- **3단계 verification pipeline**
+  - `lib/verification-pipeline.mjs` + `account/verify-age.mjs` (5sim SMS 기반 연령 검증).
+  - 배치 검증은 `account/process-batch-verification.mjs`로 직렬화.
+- **휴머노이드 시뮬레이션 / Human-like simulation**
+  - `lib/behavior-profile.mjs` (타이핑·마우스 패턴), `lib/fingerprint-config.mjs` (브라우저 핑거프린트).
+  - 프록시/릴레이는 `lib/proxy-config.mjs`, `lib/proxy-forwarder.mjs`, `lib/proxy-relay.mjs`, `lib/free-proxy.mjs`로 분기.
+- **OAuth 도구 모음 / OAuth toolkit**
+  - `lib/oauth-callback-server.mjs` — `127.0.0.1` 루프백에서 인증 콜백 캡처.
+  - `lib/token-exchange.mjs`, `lib/google-auth-browser.mjs`, `oauth/oauth-login.mjs`, `oauth/setup-gcp-oauth.mjs`.
+- **Antigravity end-to-end**
+  - `antigravity/antigravity-pipeline.mjs` → `antigravity/inject-vscdb-token.mjs` → `antigravity/unlock-features.mjs` 체인.
+  - 보조: `antigravity/antigravity-auth.mjs`, `antigravity/manual-token-acquire.mjs`.
+- **Family / YouTube 부속 워크플로 / Family & YouTube side flows**
+  - `account/family-group.mjs`, `account/youtube-signup.mjs`, `account/youtube-signup-cdp.mjs`.
+- **App-owned automation (jclee-bot)**
+  - 이슈 분류, PR 리뷰/머지, 릴리스 게시, 다운스트림 헬스체크, 머지된 PR 정리, 봇 자체 수정까지 jclee-bot이 단독 결정.
 
 ---
 
 ## 3. 아키텍처 / Architecture
 
-워크스페이스는 **scripts → lib utilities → 외부 provider/디바이스 → 산출물** 방향으로 흐르며, `jclee-bot`이 모든 mutating 자동화(PR·이슈·릴리스·봇 자동수정)를 소유합니다. 아래 다이어그램은 데이터 흐름과 자동화 소유 경계를 한 눈에 보여줍니다.
+워크플로 파일은 jclee-bot이 응답하는 **이벤트 어댑터**이며, 자동화 정책의 진실의 원천은 jclee-bot 자체입니다. 다음 다이어그램은 코드 컴포넌트와 자동화 표면을 보여줍니다.
 
 ```mermaid
-flowchart LR
-    classDef script fill:#1f6feb,stroke:#0b3d91,color:#ffffff;
-    classDef lib fill:#6e40c9,stroke:#3a1f6b,color:#ffffff;
-    classDef ext fill:#2da44e,stroke:#1a6b32,color:#ffffff;
-    classDef store fill:#bf8700,stroke:#7a5600,color:#ffffff;
-    classDef bot fill:#cf222e,stroke:#7a0f1a,color:#ffffff;
-    classDef cloud fill:#0d1117,stroke:#30363d,color:#ffffff;
+flowchart TB
+    subgraph ENTRY["Entry scripts (Node.js ESM .mjs)"]
+        direction TB
+        BIN["bin/*.sh"]
+        ACCT["account/*.mjs"]
+        AG["antigravity/*.mjs"]
+        OA["oauth/*.mjs"]
+        OAI["openai/*.mjs"]
+    end
 
-    S1["account/<br/>create-accounts.mjs<br/>create-accounts-{adb,cdp,appium}.mjs<br/>gmail-creator-mcp.mjs<br/>verify-age.mjs"]:::script
-    S2["antigravity/<br/>antigravity-auth.mjs<br/>antigravity-pipeline.mjs<br/>inject-vscdb-token.mjs<br/>unlock-features.mjs"]:::script
-    S3["oauth/<br/>oauth-login.mjs<br/>setup-gcp-oauth.mjs"]:::script
-    S4["openai/<br/>check-accounts.mjs<br/>create-accounts.mjs<br/>openai-creator-mcp.mjs"]:::script
+    subgraph SHARED["Shared libraries (lib/)"]
+        direction TB
+        ADB["adb-utils.mjs"]
+        CDP["cdp-utils.mjs"]
+        SMS["sms-provider.mjs"]
+        VP["verification-pipeline.mjs"]
+        TOK["token-exchange.mjs"]
+        OCB["oauth-callback-server.mjs"]
+        BHV["behavior-profile.mjs"]
+        FP["fingerprint-config.mjs"]
+        PROXY["proxy-config.mjs /<br/>proxy-forwarder.mjs /<br/>proxy-relay.mjs /<br/>free-proxy.mjs"]
+        GA["google-auth-browser.mjs"]
+        LA["browser-launch.mjs /<br/>cli-args.mjs"]
+    end
 
-    L1["lib/<br/>sms-provider.mjs<br/>verification-pipeline.mjs"]:::lib
-    L2["lib/<br/>browser-launch.mjs<br/>cdp-utils.mjs<br/>adb-utils.mjs<br/>google-auth-browser.mjs"]:::lib
-    L3["lib/<br/>behavior-profile.mjs<br/>fingerprint-config.mjs<br/>proxy-* / free-proxy.mjs"]:::lib
-    L4["lib/<br/>oauth-callback-server.mjs<br/>token-exchange.mjs<br/>cli-args.mjs"]:::lib
+    subgraph MCP["MCP servers"]
+        GMCP["account/gmail-creator-mcp.mjs<br/>4 tools: create_accounts /<br/>get_creation_job / list_accounts /<br/>get_account_status"]
+        OAI_MCP["openai/openai-creator-mcp.mjs"]
+    end
 
-    E1["SMS Providers<br/>5sim · sms-activate"]:::ext
-    E2["Browsers / Devices<br/>Playwright · Rebrowser<br/>CDP · ADB · Appium · ReDroid"]:::ext
-    E3["Google / Antigravity / OpenAI<br/>OAuth + APIs"]:::ext
+    subgraph EXT["External services"]
+        direction TB
+        PW["Playwright / Rebrowser"]
+        CDP_RT["Chrome DevTools Protocol"]
+        ADB_RT["Android ADB / ReDroid"]
+        APM["Appium"]
+        SMSP["5sim / sms-activate"]
+        GCP["Google OAuth (GCP)"]
+    end
 
-    D1["accounts.csv<br/>complete.csv<br/>openai-accounts.csv"]:::store
-    D2["data/warmup-progress.json<br/>antigravity-auth-results.json"]:::store
-    D3["gcp-oauth.keys.json"]:::store
+    subgraph HOMELAB["Self-hosted runtime"]
+        HOST["&lt;homelab-host&gt;<br/>CLIProxyAPI endpoint<br/>https://cliproxy.jclee.me/v1"]
+        ELK["&lt;homelab-elk&gt;<br/>logs / metrics sink"]
+    end
 
-    B1["jclee-bot (mutating automation owner)<br/>issue-to-branch · branch-to-pr<br/>pr-review · security pr-review<br/>pr-auto-merge · dependabot-auto-merge<br/>bot-auto-fix · merged-pr-cleanup"]:::bot
-    B2["jclee-bot (release &amp; health)<br/>release-notes · release-publish<br/>downstream-health-check<br/>ci-failure-issues · issue-backfill"]:::bot
+    subgraph BOT["App-owned automation (jclee-bot)"]
+        direction TB
+        IB["Issue automation<br/>jclee-bot에의해자동화됨"]
+        PB["PR review / auto-merge / bot-fix"]
+        RB["Release notes / publish"]
+        HB["Downstream health check"]
+        CB["Merged-PR cleanup / issue backfill"]
+        CI["CI smoke"]
+        TRIGS["14 workflow files<br/>(event adapters only)"]
+    end
 
-    C1["CLIProxyAPI<br/>&lt;homelab-host&gt;:8317"]:::cloud
-    C2["https://cliproxy.jclee.me/v1<br/>https://bot.jclee.me"]:::cloud
-
-    S1 --> L1
-    S1 --> L2
-    S1 --> L3
-    S2 --> L1
-    S2 --> L2
-    S2 --> L4
-    S3 --> L4
-    S3 --> L2
-    S4 --> L1
-    S4 --> L2
-
-    L1 --> E1
-    L2 --> E2
-    L2 --> E3
-    L3 --> E2
-    L4 --> E3
-
-    S1 --> D1
-    S2 --> D2
-    S3 --> D3
-    S4 --> D1
-
-    B1 -.mutates.-> S1
-    B1 -.mutates.-> S2
-    B1 -.mutates.-> S3
-    B1 -.mutates.-> S4
-    B2 -.publishes &amp; monitors.-> C1
-    B2 -.publishes &amp; monitors.-> C2
+    ENTRY --> SHARED
+    ENTRY --> MCP
+    ENTRY --> EXT
+    MCP --> SHARED
+    SHARED --> EXT
+    ENTRY --> HOMELAB
+    HOMELAB --> EXT
+    HOMELAB --> ELK
+    TRIGS -. events .-> BOT
+    BOT -. mutates .-> ENTRY
+    BOT -. mutates .-> SHARED
+    CI --> ENTRY
 ```
 
-핵심 경계:
-
-- **App-owned automation surfaces** — 계정/토큰/CSV/JSON 산출물은 본 워크스페이스 스크립트가 직접 소유합니다.
-- **jclee-bot owned automation** — 이슈 → 브랜치, 브랜치 → PR, PR 리뷰/자동병합, 의존성 자동병합, 봇 자동수정, 머지된 PR 정리, 릴리스 노트/게시, 다운스트림 헬스체크, CI 실패 이슈 생성, 이슈 백필은 모두 `jclee-bot`이 소유합니다(워크플로 파일은 단순 트리거).
-- **External LLM proxy** — README 생성 및 PR 리뷰 등 자동화 모델 호출은 `https://cliproxy.jclee.me/v1`(호스트: `&lt;homelab-host&gt;:8317`)을 경유합니다.
+워크플로 파일 자체는 카탈로그화하지 않습니다. 각 `.yml`은 위 다이어그램에서 jclee-bot이 실행하는 **트리거 어댑터**에 불과합니다.
 
 ---
 
-## 4. jclee-bot 자동화 영역 / jclee-bot Automation Surfaces
+## 4. jclee-bot 자동화 표면 / jclee-bot automation surfaces
 
-`jclee-bot`은 본 저장소의 모든 **mutating automation** 단일 소유자입니다. 각 GitHub Actions 워크플로 파일은 트리거일 뿐이며, 실제 자동화 의사결정·기록·게시는 `jclee-bot`이 담당합니다.
+jclee-bot GitHub App이 이 저장소에서 **mutating automation의 단독 소유자**입니다. 14개의 워크플로 파일(`01_…`, `02_…`, `10_…`, …)은 모두 jclee-bot이 구독하는 이벤트 어댑터이며, 정책 결정과 부수 효과는 전부 jclee-bot이 수행합니다.
 
-- **이슈 → 브랜치 자동 생성** — 이슈가 라벨링되거나 명령이 달리면 `jclee-bot`이 브랜치를 만들고 작업 트리를 준비합니다. 신규 이슈 자동 라벨링은 `jclee-bot에의해자동화됨` 마커로 추적됩니다.
-- **브랜치 → PR 자동 개시** — 작업 브랜치 푸시를 감지하여 `jclee-bot`이 PR을 열고 템플릿을 채워넣습니다.
-- **PR 리뷰(일반 + 보안)** — `qodo-ai/pr-agent`을 통해 일반 리뷰를, 자체 보안 규칙으로 보안 리뷰를 `jclee-bot`이 수행합니다.
-- **PR 자동 병합 / Dependabot 자동 병합** — 리뷰 결과가 통과 기준을 충족하면 `jclee-bot`이 squash 병합을 수행합니다.
-- **봇 자동 수정** — CI 실패 또는 리뷰 코멘트 기반 수정안은 `jclee-bot`이 커밋으로 푸시합니다.
-- **머지된 PR 정리 / CI 실패 이슈 생성 / 이슈 백필** — 보관 정책과 운영 추적성 모두 `jclee-bot` 책임입니다.
-- **릴리스 노트 / 릴리스 게시** — `jclee-bot`이 시맨틱 버전과 changelog를 작성해 GitHub Release를 게시합니다.
-- **다운스트림 헬스체크** — 공개 엔드포인트 `https://cliproxy.jclee.me`과 `https://bot.jclee.me`의 상태를 `jclee-bot`이 주기적으로 점검합니다.
+### 4.1 이슈 자동화 / Issue automation
 
-> 외부 참고 링크 / External references: [qodo-ai/pr-agent](https://github.com/qodo-ai/pr-agent) · [`https://cliproxy.jclee.me`](https://cliproxy.jclee.me) · [`https://bot.jclee.me`](https://bot.jclee.me)
+- **이슈 → 브랜치 → PR 파이프라인**: 새 이슈(또는 특정 라벨)가 발생하면 jclee-bot이 브랜치를 만들고 초안 PR을 엽니다. 이슈 본문에서 자동 적용된 변경에는 **`jclee-bot에의해자동화됨`** 마커가 부착됩니다.
+- **백필 / CI 실패 이슈 자동 생성**: `19_issue-backfill.yml`·`37_ci-failure-issues.yml`이 발화하더라도 실제 라벨링·할당·close는 jclee-bot이 담당합니다.
+- 사람이 의도적으로 만든 이슈라도 자동 라벨·자동 트리아지·자동 마일스톤 이동은 jclee-bot의 결정입니다.
+
+### 4.2 PR 자동화 / PR automation
+
+- PR 리뷰는 [`qodo-ai/pr-agent`](https://github.com/qodo-ai/pr-agent) 기반 시큐리티 리뷰(`11_security-pr-review.yml`)를 포함하며, 일반 리뷰(`10_pr-review.yml`), Dependabot 자동 머지(`12_dependabot-auto-merge.yml`), 일반 PR 자동 머지(`13_pr-auto-merge.yml`), 봇 자체 수정(`14_bot-auto-fix.yml`), 머지 후 PR 정리(`15_merged-pr-cleanup.yml`)까지 jclee-bot이 단독 결정·실행합니다.
+- 사람이 작성자가 아닌 PR의 머지 가능 표시와 자동 머지는 모두 jclee-bot의 정책 출력입니다.
+
+### 4.3 릴리스 자동화 / Release automation
+
+- 릴리스 노트 자동 생성(`24_release-notes.yml`)과 릴리스 게시(`25_release-publish.yml`), 다운스트림 헬스 체크(`29_downstream-health-check.yml`)는 jclee-bot이 소유합니다.
+- CI(`ci.yml`)는 smoke 단계일 뿐이며, 게시·롤백·체크런 해제는 jclee-bot이 내립니다.
+
+### 4.4 운영 규칙 / Operating rules
+
+- 자동화로 인한 직접 푸시, 라벨 변경, 코멘트, 이슈 close, PR 머지, 릴리스 게시, 워크플로 재실행, 봇 자체 수정 — 모두 jclee-bot의 작업입니다.
+- 사람이 `workflow_dispatch`로 트리거하더라도 실제 부수 효과는 jclee-bot이 검증·승인 후에만 반영됩니다.
+- 외부 상태(예: jclee-bot 컨트롤 플레인)는 [`https://bot.jclee.me`](https://bot.jclee.me)에서 확인합니다.
 
 ---
 
-## 5. Go 자동화 도구 / Go Automation Tools
+## 5. Go 자동화 도구 / Go automation tools
 
-본 저장소에는 **Go 기반 자동화 도구가 0개** 있습니다. 모든 자동화 스크립트는 Node.js ESM(`*.mjs`) 및 셸 스크립트(`bin/*.sh`)로 작성되어 있습니다. 향후 Go 도구가 추가되면 본 섹션과 `AGENTS.md`의 `## STRUCTURE` 블록을 함께 갱신해야 합니다.
-
-This repository contains **zero Go-based automation tools**. All automation scripts are written as Node.js ESM (`*.mjs`) and shell scripts (`bin/*.sh`). When a Go tool is introduced, this section and the `## STRUCTURE` block in `AGENTS.md` must be updated together.
+이 저장소에는 Go 기반 자동화 도구가 **0개** 있습니다. 모든 자동화는 Node.js ESM 스크립트와 jclee-bot GitHub App 위에 있습니다. 추후 Go 도구가 추가되면 본 섹션에 도구 이름·입출력 표면·소유자(jclee-bot 여부)를 명시합니다.
 
 ---
 
-## 6. 빠른 시작 / Quick Start
+## 6. 빠른 시작 / Quick start
+
+### 6.1 사전 요구 사항 / Prerequisites
+
+- Node.js 20+ (ESM, native `fetch`, `WebSocket`).
+- npm 10+.
+- (선택) Android 디바이스 / 에뮬레이터 또는 ReDroid 컨테이너.
+- (선택) 5sim / sms-activate API 키.
+- (선택) GCP OAuth client (`oauth/setup-gcp-oauth.mjs`로 발급).
+
+### 6.2 설치 / Install
 
 ```bash
-# 1. 의존성 설치 / Install dependencies
-npm ci
+git clone <repo-url>
+cd <repo-dir>
+npm install
+```
 
-# 2. 1Password 서비스 계정 및 GCP OAuth 자격 증명 준비 (1Password Service Account 권장)
-bin/setup-1password-service-account.sh
-bin/setup-credentials.sh
-bin/setup-gcp-oauth.mjs   # 또는 oauth/setup-gcp-oauth.mjs 직접 호출
+### 6.3 첫 실행 / First run
 
-# 3. Gmail 계정 생성 (드라이런)
+```bash
+# dry-run으로 진입점 동작 확인
 node account/create-accounts.mjs --dry-run
 
-# 4. MCP 서버 기동 (mcphub에서 연결)
+# MCP 서버를 stdio로 실행
 node account/gmail-creator-mcp.mjs
 
-# 5. Antigravity 인증 파이프라인
+# GCP OAuth 시크릿 셋업
+node oauth/setup-gcp-oauth.mjs
+
+# Antigravity end-to-end 파이프라인
 node antigravity/antigravity-pipeline.mjs
 ```
 
-전제 조건 / Prerequisites:
+### 6.4 추가 문서 / Further reading
 
-- Node.js 18+ (ESM, `type: module` 가정)
-- ADB가 PATH에 노출된 Android 디바이스 또는 ReDroid 컨테이너
-- Playwright / Rebrowser용 Chromium
-- 5sim API 키 (SMS 인증이 필요한 플로우)
-
----
-
-## 7. 로컬 개발 / Local Development
-
-```bash
-# 린트/포맷 (프로젝트 정책에 따라 eslint/prettier 추가 예정)
-node --check account/create-accounts.mjs
-node --check antigravity/antigravity-pipeline.mjs
-
-# 스모크 테스트
-node tests/gmail-creator-mcp-smoke.mjs
-node tests/qa-manual.mjs
-
-# 디버그용 임시 스크립트
-node tmp/debug-selects.mjs
-node tmp/sms-fast-v2.mjs
-```
-
-샌드박스 / Sandbox:
-
-- 외부 provider에 부작용을 주지 않으려면 `--dry-run`을 우선 사용하세요.
-- SMS 비용이 발생하므로 5sim 잔액과 provider별 한도를 사전에 확인하세요.
-- `data/warmup-progress.json`은 워밍업 진행 상태의 단일 출처(SSOT)이므로 직접 편집하지 마세요.
+- [`docs/QUICKSTART.md`](./docs/QUICKSTART.md) — 환경별 빠른 시작.
+- [`docs/adb-gmail-creation.md`](./docs/adb-gmail-creation.md) — ADB 트랜스포트 가이드.
+- [`docs/verification-bypass-analysis.md`](./docs/verification-bypass-analysis.md) — 검증 파이프라인 분석.
+- [`docs/ALTERNATIVE-SMS-PROVIDERS.md`](./docs/ALTERNATIVE-SMS-PROVIDERS.md) — SMS provider 어댑터 추가 가이드.
+- [`openai/README.md`](./openai/README.md) — OpenAI 보조 도구 상세.
+- [`AGENTS.md`](./AGENTS.md) — jclee-bot이 컨텍스트로 소비하는 프로젝트 지식 베이스.
 
 ---
 
-## 8. 명령어 레퍼런스 / Commands Reference
+## 7. 로컬 개발 / Local development
 
-| 명령 | 용도 |
-| --- | --- |
-| `node account/create-accounts.mjs [--dry-run] [--count N]` | 기본 Gmail 계정 생성 |
-| `node account/create-accounts-adb.mjs` | ADB + Android Chrome 기반 생성 |
-| `node account/create-accounts-cdp.mjs` | ReDroid WebView + CDP 모드 |
-| `node account/create-accounts-appium.mjs` | Appium + Docker Android 에뮬레이터 |
-| `node account/gmail-creator-mcp.mjs` | MCP 서버 기동 (4 tool 노출) |
-| `node account/verify-age.mjs` | 5sim SMS 연동 나이 인증 |
-| `node account/family-group.mjs` | 가족 그룹 초대/수락 |
-| `node account/warmup-account.mjs` | 계정 워밍업 |
-| `node account/process-batch-verification.mjs` | 배치 검증 처리 |
-| `node account/verify-all-accounts.mjs` | 전체 계정 검증 |
-| `node account/infrastructure/setup-emulator.mjs` | 에뮬레이터 인프라 셋업 |
-| `node antigravity/antigravity-auth.mjs` | Antigravity OAuth + SMS 인증 |
-| `node antigravity/antigravity-pipeline.mjs` | Antigravity 엔드투엔드 활성화 |
-| `node antigravity/inject-vscdb-token.mjs` | VSCDB protobuf 토큰 주입 |
-| `node antigravity/unlock-features.mjs` | 5sim SMS feature unlock |
-| `node antigravity/manual-token-acquire.mjs` | 수동 보조 OAuth 토큰 획득 |
-| `node oauth/oauth-login.mjs` | OAuth 동의/로그인 헬퍼 |
-| `node oauth/setup-gcp-oauth.mjs` | GCP OAuth 자격 증명 자동 셋업 |
-| `node openai/check-accounts.mjs` | OpenAI 계정 점검 |
-| `node openai/create-accounts.mjs` | OpenAI 계정 생성 보조 |
-| `node openai/openai-creator-mcp.mjs` | OpenAI MCP 서버 |
-| `bin/create-gmail.sh` | Gmail 생성 셸 래퍼 |
-| `bin/setup-credentials.sh` | 자격 증명 셋업 |
-| `bin/setup_frida.sh` | Frida 환경 셋업 |
-| `bin/xdg-open` | OAuth 콜백 인터셉터 (`lib/xdg-open`로 노출) |
-| `node tests/gmail-creator-mcp-smoke.mjs` | MCP 스모크 (29 단언) |
-| `node tests/qa-manual.mjs` | 수동 QA (6 케이스) |
-
----
-
-## 9. 저장소 구조 / Repository Structure
+### 7.1 디렉토리 레이아웃 / Directory layout
 
 ```text
 .
-├── AGENTS.md                          # 프로젝트 지식 베이스 (자동화 인벤토리 SSOT)
-├── CONTRIBUTING.md                    # 기여 가이드
-├── LICENSE                            # 라이선스
-├── README.md                          # 본 문서
-├── package.json                       # 루트 의존성
-├── package-lock.json                  # 의존성 잠금
-├── complete.csv                       # 계정 상태 산출물
-├── openai-accounts.csv                # OpenAI 계정 산출물
-├── bin/                               # 셸 래퍼 및 환경 셋업
+├── AGENTS.md                       # 프로젝트 지식 베이스 (jclee-bot 컨텍스트)
+├── CONTRIBUTING.md                 # 기여 가이드
+├── LICENSE
+├── README.md
+├── package.json / package-lock.json
+├── complete.csv                    # 생성된 계정 종합 결과
+├── openai-accounts.csv             # OpenAI 계정 점검/생성 결과
+│
+├── bin/                            # 셸 진입점
 │   ├── create-gmail.sh
 │   ├── setup-1password-service-account.sh
 │   ├── setup-credentials.sh
 │   ├── setup_frida.sh
-│   └── xdg-open                       # OAuth 콜백 인터셉터 (lib과 연동)
-├── oauth/                             # OAuth 자격 증명 흐름
+│   └── xdg-open
+│
+├── oauth/                          # OAuth 자격 증명 흐름
 │   ├── oauth-login.mjs
 │   └── setup-gcp-oauth.mjs
-├── account/                           # Gmail 계정 자동화
+│
+├── account/                        # Gmail 계정 자동화 + 검증
 │   ├── cdp-login-test.mjs
 │   ├── check-account-exists.mjs
-│   ├── create-accounts.mjs            # 주 생성 플로우
+│   ├── create-accounts.mjs
 │   ├── create-accounts-adb.mjs
 │   ├── create-accounts-appium.mjs
 │   ├── create-accounts-cdp.mjs
-│   ├── create-accounts.mjs
 │   ├── debug-sms-capture.mjs
 │   ├── diagnostic-login.mjs
 │   ├── direct-login-test.mjs
 │   ├── family-group.mjs
 │   ├── frida-sms-hook.js
-│   ├── gmail-creator-mcp.mjs          # MCP 서버 (4 tool)
+│   ├── gmail-creator-mcp.mjs       # MCP 서버 (4 tools)
 │   ├── infrastructure-diagnostic.mjs
 │   ├── process-batch-verification.mjs
 │   ├── puppeteer-gmail.mjs
@@ -267,21 +273,26 @@ node tmp/sms-fast-v2.mjs
 │   ├── verify-age.mjs
 │   ├── verify-all-accounts.mjs
 │   ├── warmup-account.mjs
-│   ├── youtube-signup-cdp.mjs
 │   ├── youtube-signup.mjs
+│   ├── youtube-signup-cdp.mjs
 │   └── infrastructure/
 │       └── setup-emulator.mjs
-├── openai/                            # OpenAI 계정 점검/생성
+│
+├── openai/                         # OpenAI 계정 보조
 │   ├── README.md
 │   ├── check-accounts.mjs
 │   ├── create-accounts.mjs
 │   └── openai-creator-mcp.mjs
-├── docs/                              # 운영 문서
-│   ├── ALTERNATIVE-SMS-PROVIDERS.md
-│   ├── QUICKSTART.md
-│   ├── adb-gmail-creation.md
-│   └── verification-bypass-analysis.md
-├── lib/                               # 공유 유틸리티
+│
+├── antigravity/                    # Antigravity IDE 인증/토큰
+│   ├── antigravity-auth.mjs
+│   ├── antigravity-auth-results.json
+│   ├── antigravity-pipeline.mjs
+│   ├── inject-vscdb-token.mjs
+│   ├── manual-token-acquire.mjs
+│   └── unlock-features.mjs
+│
+├── lib/                            # 공유 유틸
 │   ├── adb-utils.mjs
 │   ├── antigravity-shared.mjs
 │   ├── behavior-profile.mjs
@@ -295,22 +306,24 @@ node tmp/sms-fast-v2.mjs
 │   ├── proxy-config.mjs
 │   ├── proxy-forwarder.mjs
 │   ├── proxy-relay.mjs
-│   ├── sms-provider.mjs               # 5sim / sms-activate 추상화
+│   ├── sms-provider.mjs
 │   ├── token-exchange.mjs
 │   └── verification-pipeline.mjs
-├── data/
-│   └── warmup-progress.json           # 워밍업 진행 상태 SSOT
-├── antigravity/                       # Antigravity IDE 인증/토큰 주입
-│   ├── antigravity-auth-results.json
-│   ├── antigravity-auth.mjs
-│   ├── antigravity-pipeline.mjs
-│   ├── inject-vscdb-token.mjs
-│   ├── manual-token-acquire.mjs
-│   └── unlock-features.mjs
-├── tests/                             # 스모크 + 수동 QA
+│
+├── docs/                           # 추가 문서
+│   ├── ALTERNATIVE-SMS-PROVIDERS.md
+│   ├── QUICKSTART.md
+│   ├── adb-gmail-creation.md
+│   └── verification-bypass-analysis.md
+│
+├── data/                           # 런타임 상태
+│   └── warmup-progress.json
+│
+├── tests/                          # MCP 스모크 + 수동 QA
 │   ├── gmail-creator-mcp-smoke.mjs
 │   └── qa-manual.mjs
-└── tmp/                               # 일회성 디버그/실험 스크립트
+│
+└── tmp/                            # 디버깅 / 일회성 스크립트
     ├── debug-selects.mjs
     ├── sms-fast-v2.mjs
     ├── sms-verify-fast.mjs
@@ -318,18 +331,57 @@ node tmp/sms-fast-v2.mjs
     └── ui.xml
 ```
 
-> 참고: 워크플로 파일(`.github/workflows/*.yml`)은 mutating 자동화 자체가 아니라 jclee-bot 자동화의 **트리거**이므로 본 트리에서 별도 디렉터리로 노출하지 않습니다. 자동화 동작의 SSOT는 `AGENTS.md`와 본 README의 §4입니다.
+### 7.2 환경 변수 / Environment variables
+
+- `FIVESIM_API_KEY` — 5sim API 키 (`lib/sms-provider.mjs`).
+- `GCP_OAUTH_CLIENT_SECRETS` / `GOOGLE_APPLICATION_CREDENTIALS` — `oauth/` 흐름에서 사용.
+- `ADB_DEVICE_SERIAL` — 다중 디바이스 환경에서 타깃 디바이스 선택.
+- `CLIPROXY_BASE_URL` — 기본 `https://cliproxy.jclee.me/v1`, README 생성 fallback 경로로 사용.
+- `BOT_CONTROL_PLANE` — jclee-bot 컨트롤 플레인 (보통 `https://bot.jclee.me`).
+
+### 7.3 로컬 검증 / Local verification
+
+- `node tests/gmail-creator-mcp-smoke.mjs` — MCP 서버 29-assertion 스모크.
+- `node tests/qa-manual.mjs` — 6-케이스 수동 QA.
+- 각 진입점 스크립트는 `--help`를 노출합니다. 가설(flag) 동작이 다르면 `lib/cli-args.mjs`를 확인하세요.
+- 자동화는 jclee-bot이 단독 소유하므로, 로컬에서 워크플로를 재현하더라도 부수 효과는 jclee-bot 측에서 검증·승인됩니다.
 
 ---
 
-## 10. 기여 가이드 / Contribution Guide
+## 8. 명령어 레퍼런스 / Commands reference
 
-- **기여 전 확인** — [`CONTRIBUTING.md`](./CONTRIBUTING.md)와 [`AGENTS.md`](./AGENTS.md)의 `## STRUCTURE` / `## WHERE TO LOOK` 표를 먼저 읽어 주세요.
-- **브랜치 규칙** — 모든 변경은 `jclee-bot`의 이슈 → 브랜치 자동화를 통해 시작합니다(`jclee-bot에의해자동화됨` 마커가 붙은 이슈). 수동 브랜치는 자동 병합 대상에서 제외됩니다.
-- **커밋 규약** — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:` 접두사를 사용하고, 본문에는 `Refs #<issue-number>`를 포함하세요.
-- **PR 리뷰** — 일반 리뷰는 `qodo-ai/pr-agent`을, 보안 리뷰는 `jclee-bot` 보안 워크플로가 수행합니다. 두 리뷰 모두 통과해야 자동 병합 대상이 됩니다.
-- **Dependabot PR** — `jclee-bot`이 자동 병합 여부를 결정하며, CI 통과가 필수입니다.
-- **테스트** — `tests/gmail-creator-mcp-smoke.mjs`와 `tests/qa-manual.mjs`를 모두 통과시켜 주세요. 새 tool을 MCP 서버에 추가하면 스모크 단언도 함께 늘려 주세요.
-- **자동화 모델** — PR 리뷰·README 자동 생성에 사용되는 모델은 `gpt-5.5`이며, 폴백은 `minimax-m3`(`https://cliproxy.jclee.me/v1` 경유)입니다.
+### 8.1 npm / package
 
-라이선스 / License: 저장소 루트의 [`LICENSE`](./LICENSE) 파일을 참조하세요.
+```bash
+npm install
+npm test                # 현재는 placeholder, 외부 smoke 사용
+```
+
+### 8.2 Gmail 계정 / Gmail accounts
+
+```bash
+node account/create-accounts.mjs --dry-run
+node account/create-accounts.mjs --headed
+node account/create-accounts-cdp.mjs
+node account/create-accounts-adb.mjs
+node account/create-accounts-appium.mjs
+node account/verify-age.mjs
+node account/verify-account.mjs
+node account/verify-all-accounts.mjs
+node account/family-group.mjs
+node account/warmup-account.mjs
+node account/check-account-exists.mjs
+node account/process-batch-verification.mjs
+node account/diagnostic-login.mjs
+node account/direct-login-test.mjs
+node account/cdp-login-test.mjs
+node account/redroid-signup-cdp.mjs
+node account/youtube-signup.mjs
+node account/youtube-signup-cdp.mjs
+node account/puppeteer-gmail.mjs
+node account/infrastructure-diagnostic.mjs
+node account/test-partner-oauth.mjs
+node account/infrastructure/setup-emulator.mjs
+```
+
+###
