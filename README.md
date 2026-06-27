@@ -2,7 +2,7 @@
 
 A Node.js toolkit for browser- and Android-driven account provisioning, OAuth setup, and verification workflows. It bundles Playwright/Puppeteer, the Chrome DevTools Protocol (CDP), Appium, ADB, and Frida behind composable CLI entry points and a shared library layer, with built-in support for proxy forwarding, SMS provider integration, and OAuth callback handling.
 
-브라우저와 Android 기반의 계정 생성, OAuth 설정, 인증(verification) 워크플로를 위한 Node.js 툴킷입니다. Playwright/Puppeteer, Chrome DevTools Protocol(CDP), Appium, ADB, Frida를 조합 가능한 CLI 진입점과 공유 라이브러리 계층 뒤에 통합하며, 프록시 포워딩, SMS 제공자 연동, OAuth 콜백 처리 기능을 기본 제공합니다.
+브라우저와 Android 기반의 계정 생성, OAuth 설정, 인증(verification) 워크플로를 위한 Node.js 툴킷입니다. Playwright/Puppeteer, Chrome DevTools Protocol(CDP), Appium, ADB, Frida를 조합 가능한 CLI 진입점과 공유 라이브러리 계층 뒤에 통합하며, 프록시 포워딩, SMS 제공자 연동, OAuth 콜백 처리를 기본 제공합니다.
 
 > ⚠️ **Intended Use / 사용 목적.** This project is published for legitimate automation, testing, and research purposes — for example, building internal test accounts, validating sign-up flows, running end-to-end QA, or conducting security research on your own infrastructure. It is the operator's responsibility to comply with the Terms of Service of every platform they interact with and with all applicable laws. Do not use it to abuse services, evade rate limits, or generate fraudulent accounts.
 >
@@ -29,37 +29,42 @@ A Node.js toolkit for browser- and Android-driven account provisioning, OAuth se
 
 ## Overview / 개요
 
-The `gmail` package (as declared in `package.json`, version `1.0.0`, ISC-licensed) is a self-contained automation workspace. Its entry points cover four broad workflows:
+The `gmail` package (as declared in `package.json`) is a research-oriented automation toolkit centered on **account provisioning flows**. It is not a single end-user application: it is a collection of Node.js entry points that drive Chromium-based browsers (via Playwright/Chromium and raw CDP), Android emulators and physical devices (via ADB and Appium/WebDriverIO), and runtime instrumentation hooks (via Frida) to script realistic sign-up, verification, OAuth, and warm-up sequences.
 
-1. **Google account provisioning** — Gmail / YouTube sign-up via Playwright, Puppeteer, raw CDP, Appium, and ADB on Android emulators or `redroid` containers. Includes age verification, family-group handling, and warm-up routines.
-2. **OAuth infrastructure setup** — Google Cloud OAuth client configuration, callback server, and token exchange helpers used by the rest of the toolchain.
-3. **OpenAI / Antigravity flows** — Parallel account creation and authentication pipelines for OpenAI services and the Antigravity feature surface, including token injection into `vscdb`-style storage.
-4. **Diagnostics & verification** — Diagnostic logins, batch verification, SMS-capture debugging, and infrastructure health checks used while developing the above.
+Its target audiences include:
 
-The shared `lib/` layer holds reusable modules: browser launchers, CDP utilities, ADB helpers, SMS provider adapters, proxy configuration/forwarders, OAuth callback servers, fingerprint profiles, and behavior profiles.
+- **QA engineers** who need to repeatedly create fresh accounts to exercise sign-up, login, and verification paths.
+- **Security researchers** studying anti-abuse, CAPTCHA, SMS verification, and OAuth flows against their own infrastructure.
+- **Internal tool authors** who want composable building blocks (browser launchers, proxy forwarders, SMS adapters, OAuth callback servers) rather than a monolithic framework.
 
-`package.json`에 선언된 `gmail` 패키지(버전 `1.0.0`, ISC 라이선스)는 단일 워크스페이스 형태의 자동화 도구입니다. 진입점은 다음 네 가지 워크플로를 다룹니다.
+Concretely the toolkit covers:
 
-1. **Google 계정 프로비저닝** — Playwright, Puppeteer, raw CDP, Appium, ADB를 사용해 Android 에뮬레이터나 `redroid` 컨테이너에서 Gmail/YouTube 가입을 수행합니다. 나이 인증, 가족 그룹 처리, 워밍업 루틴을 포함합니다.
-2. **OAuth 인프라 설정** — Google Cloud OAuth 클라이언트 구성, 콜백 서버, 토큰 교환 헬퍼를 제공합니다.
-3. **OpenAI / Antigravity 플로우** — OpenAI 서비스와 Antigravity 기능 표면을 위한 계정 생성 및 인증 파이프라인으로, `vscdb` 형식 저장소에 토큰 주입 기능까지 포함합니다.
-4. **진단 및 검증** — 위 자동화를 개발할 때 사용하는 진단 로그인, 배치 검증, SMS 캡처 디버깅, 인프라 상태 점검입니다.
+1. **Browser-based account creation** (`account/create-accounts.mjs`, `account/youtube-signup.mjs`, `account/youtube-signup-cdp.mjs`, `account/puppeteer-gmail.mjs`) using Playwright with rebrowser-style fingerprints, ghost cursor steering, and proxy rotation.
+2. **Android-based account creation** (`account/create-accounts-adb.mjs`, `account/create-accounts-appium.mjs`, `account/redroid-signup-cdp.mjs`) against emulators or redroid containers, with Frida hooks for SMS interception (`account/frida-sms-hook.js`).
+3. **Verification pipelines** (`account/verify-account.mjs`, `account/verify-age.mjs`, `account/verify-all-accounts.mjs`, `lib/verification-pipeline.mjs`) that orchestrate SMS code retrieval, age verification, and bulk re-verification.
+4. **OAuth / GCP setup** (`oauth/setup-gcp-oauth.mjs`, `oauth/oauth-login.mjs`, `lib/oauth-callback-server.mjs`, `lib/token-exchange.mjs`) for headless OAuth client creation and token exchange.
+5. **OpenAI account provisioning** (`openai/create-accounts.mjs`, `openai/check-accounts.mjs`, `openai/openai-creator-mcp.mjs`).
+6. **Antigravity auth pipeline** (`antigravity/antigravity-pipeline.mjs`, `antigravity/unlock-features.mjs`, `antigravity/inject-vscdb-token.mjs`) for VS Code `vscdb` token injection and feature unlocking.
+7. **Account warm-up** (`account/warmup-account.mjs`, `lib/behavior-profile.mjs`) using scripted browsing behavior profiles to simulate organic usage.
+8. **Model Context Protocol servers** (`account/gmail-creator-mcp.mjs`, `openai/openai-creator-mcp.mjs`) that expose the account-creation tools over MCP so AI agents can drive them.
 
-`lib/` 계층은 브라우저 런처, CDP 유틸리티, ADB 헬퍼, SMS 제공자 어댑터, 프록시 설정/포워더, OAuth 콜백 서버, 핑거프린트 프로파일, 동작 프로파일 등 재사용 가능한 모듈을 제공합니다.
+`gmail` 패키지(`package.json` 기준)는 **계정 생성 플로우**를 중심으로 한 연구 지향 자동화 툴킷입니다. 단일 최종 사용자용 앱이 아니라, Chromium 기반 브라우저(Playwright/Chromium, raw CDP), Android 에뮬레이터 및 실기기(ADB, Appium/WebDriverIO), Frida 런타임 계측을 구동해 가입·인증·OAuth·웜업 시퀀스를 스크립팅하는 Node.js 진입점들의 모음입니다.
 
 ---
 
 ## Key Features / 주요 기능
 
-- **Multi-engine browser automation.** Drive the same sign-up flow through `rebrowser-playwright`, Puppeteer, raw Chrome DevTools Protocol, or `@playwright/mcp` — choose the engine per environment. / 동일한 가입 플로우를 `rebrowser-playwright`, Puppeteer, raw CDP, `@playwright/mcp`로 구동할 수 있습니다.
-- **Android device/automation support.** WebdriverIO / Appium plus ADB and Frida hooks for SMS interception (`frida-sms-hook.js`, `debug-sms-capture.mjs`). / WebdriverIO/Appium에 ADB와 Frida 훅을 결합해 SMS를 가로챕니다.
-- **OAuth plumbing.** Built-in GCP OAuth client setup, a local callback server, and token-exchange helpers. / GCP OAuth 클라이언트 설정, 로컬 콜백 서버, 토큰 교환 헬퍼를 내장합니다.
-- **Proxy forwarding & relay.** `proxy-config.mjs`, `proxy-forwarder.mjs`, and `proxy-relay.mjs` chain upstream proxies to outgoing connections for split routing. / 업스트림 프록시를 분할 라우팅으로 체이닝합니다.
-- **SMS provider integration.** Pluggable SMS adapter (`sms-provider.mjs`) with documented alternative providers. / 문서화된 대체 제공자를 지원하는 플러그형 SMS 어댑터.
-- **Behavior & fingerprint profiles.** Centralized profile modules (`behavior-profile.mjs`, `fingerprint-config.mjs`) keep automation signatures consistent. / 자동화 시그니처를 일관되게 유지하기 위한 중앙 집중식 프로파일 모듈.
-- **MCP servers.** Includes `@gongrzhe/server-gmail-autoauth-mcp` and `@modelcontextprotocol/sdk` to expose flows through the Model Context Protocol. / Model Context Protocol을 통해 플로우를 노출합니다.
-- **Warm-up & verification pipelines.** `warmup-account.mjs`, `verify-account.mjs`, `verify-all-accounts.mjs`, and `process-batch-verification.mjs` operate on the CSV outputs. / CSV 출력물을 대상으로 워밍업과 검증을 수행합니다.
-- **Diagnostics.** Dedicated diagnostic scripts (`infrastructure-diagnostic.mjs`, `diagnostic-login.mjs`, `cdp-login-test.mjs`, `direct-login-test.mjs`) for debugging. / 디버깅 전용 진단 스크립트.
+- **Multi-driver browser automation** — Playwright (`rebrowser-playwright`), `puppeteer`-style flows, and direct CDP sessions through `lib/cdp-utils.mjs` and `lib/browser-launch.mjs`.
+- **Android automation via ADB and Appium** — `lib/adb-utils.mjs`, `account/create-accounts-adb.mjs`, `account/create-accounts-appium.mjs`, and `account/infrastructure/setup-emulator.mjs`.
+- **Frida runtime hooks** — `account/frida-sms-hook.js` for SMS interception and runtime instrumentation on Android targets.
+- **Proxy forwarding and rotation** — `lib/proxy-config.mjs`, `lib/proxy-forwarder.mjs`, `lib/proxy-relay.mjs`, plus a free-proxy adapter in `lib/free-proxy.mjs`.
+- **SMS provider abstraction** — `lib/sms-provider.mjs` with pluggable providers and references to alternative vendors in `docs/ALTERNATIVE-SMS-PROVIDERS.md`.
+- **OAuth client setup and callback handling** — `lib/oauth-callback-server.mjs`, `lib/token-exchange.mjs`, `oauth/oauth-login.mjs`, `oauth/setup-gcp-oauth.mjs`.
+- **Verification pipeline** — orchestrators in `lib/verification-pipeline.mjs` for batch and per-account verification flows (`account/verify-account.mjs`, `account/verify-all-accounts.mjs`, `account/process-batch-verification.mjs`).
+- **Fingerprint and behavior profiles** — `lib/fingerprint-config.mjs`, `lib/behavior-profile.mjs` for randomized, realistic-looking sessions.
+- **MCP (Model Context Protocol) integration** — `@modelcontextprotocol/sdk` plus dedicated server entry points (`account/gmail-creator-mcp.mjs`, `openai/openai-creator-mcp.mjs`) and `@playwright/mcp` for browser-facing tools.
+- **Credential bootstrapping via 1Password** — `bin/setup-credentials.sh`, `bin/setup-1password-service-account.sh`, `bin/create-gmail.sh`.
+- **Diagnostics** — `account/diagnostic-login.mjs`, `account/infrastructure-diagnostic.mjs`, `account/cdp-login-test.mjs`, `tmp/debug-selects.mjs`.
 
 ---
 
@@ -67,24 +72,24 @@ The shared `lib/` layer holds reusable modules: browser launchers, CDP utilities
 
 ```
 .
-├── AGENTS.md                       # Agent / contributor operating notes
-├── CONTRIBUTING.md                 # Contribution guidelines
-├── LICENSE                         # ISC license
-├── README.md                       # This file
-├── complete.csv                    # Aggregated account output
-├── openai-accounts.csv             # OpenAI account output
-├── package.json                    # Node manifest, ISC license, deps
-├── package-lock.json               # Locked dependency tree
-├── bin/                            # Shell entry points & helpers
+├── AGENTS.md                  # Agent/contributor guidance
+├── CONTRIBUTING.md            # Contribution guide
+├── LICENSE                    # ISC license
+├── README.md                  # This document
+├── package.json               # Node.js manifest
+├── package-lock.json          # Pinned dependency graph
+├── complete.csv               # Account inventory snapshot
+├── openai-accounts.csv        # OpenAI account inventory snapshot
+├── bin/                       # Shell entry points / installers
 │   ├── create-gmail.sh
 │   ├── setup-1password-service-account.sh
 │   ├── setup-credentials.sh
 │   ├── setup_frida.sh
 │   └── xdg-open
-├── oauth/                          # OAuth infrastructure setup
+├── oauth/                     # OAuth / GCP bootstrap
 │   ├── oauth-login.mjs
 │   └── setup-gcp-oauth.mjs
-├── account/                        # Browser & Android account flows
+├── account/                   # Account lifecycle scripts
 │   ├── cdp-login-test.mjs
 │   ├── check-account-exists.mjs
 │   ├── create-accounts-adb.mjs
@@ -110,17 +115,19 @@ The shared `lib/` layer holds reusable modules: browser launchers, CDP utilities
 │   ├── youtube-signup.mjs
 │   └── infrastructure/
 │       └── setup-emulator.mjs
-├── openai/                         # OpenAI account flows
+├── openai/                    # OpenAI-specific flows
 │   ├── README.md
 │   ├── check-accounts.mjs
 │   ├── create-accounts.mjs
 │   └── openai-creator-mcp.mjs
-├── docs/                           # Long-form documentation
-│   ├── ALTERNATIVE-SMS-PROVIDERS.md
-│   ├── QUICKSTART.md
-│   ├── adb-gmail-creation.md
-│   └── verification-bypass-analysis.md
-├── lib/                            # Shared library modules
+├── antigravity/               # Antigravity / vscdb pipeline
+│   ├── antigravity-auth-results.json
+│   ├── antigravity-auth.mjs
+│   ├── antigravity-pipeline.mjs
+│   ├── inject-vscdb-token.mjs
+│   ├── manual-token-acquire.mjs
+│   └── unlock-features.mjs
+├── lib/                       # Shared library layer
 │   ├── adb-utils.mjs
 │   ├── antigravity-shared.mjs
 │   ├── behavior-profile.mjs
@@ -137,19 +144,17 @@ The shared `lib/` layer holds reusable modules: browser launchers, CDP utilities
 │   ├── sms-provider.mjs
 │   ├── token-exchange.mjs
 │   └── verification-pipeline.mjs
-├── data/                           # State files (e.g. warmup progress)
-│   └── warmup-progress.json
-├── antigravity/                    # Antigravity auth pipeline
-│   ├── antigravity-auth-results.json
-│   ├── antigravity-auth.mjs
-│   ├── antigravity-pipeline.mjs
-│   ├── inject-vscdb-token.mjs
-│   ├── manual-token-acquire.mjs
-│   └── unlock-features.mjs
-├── tests/                          # Smoke & manual QA scripts
+├── tests/                     # Smoke tests / QA
 │   ├── gmail-creator-mcp-smoke.mjs
 │   └── qa-manual.mjs
-└── tmp/                            # Scratch / debug space (not for production)
+├── data/
+│   └── warmup-progress.json
+├── docs/                      # Long-form documentation
+│   ├── ALTERNATIVE-SMS-PROVIDERS.md
+│   ├── QUICKSTART.md
+│   ├── adb-gmail-creation.md
+│   └── verification-bypass-analysis.md
+└── tmp/                       # Scratch / debug scripts
     ├── debug-selects.mjs
     ├── sms-fast-v2.mjs
     ├── sms-verify-fast.mjs
@@ -161,260 +166,362 @@ The shared `lib/` layer holds reusable modules: browser launchers, CDP utilities
 
 ## Architecture / 아키텍처
 
-The toolkit is organized as a thin set of **CLI scripts** that import a thicker **shared library**. Each top-level script represents one end-to-end flow (create, verify, warm up, diagnose) and composes library modules to drive browsers, devices, proxies, and SMS providers.
+The toolkit follows a three-layer structure: a thin **CLI entry-point layer** of `.mjs` scripts, a **shared library layer** in `lib/` that abstracts away browser/Android/protocol details, and an **integration layer** that talks to external systems (Chromium, Android via ADB/Appium, Frida, SMS providers, OAuth providers, proxies).
 
 ```mermaid
 flowchart TB
-  subgraph Entrypoints["Entry points / 진입점"]
-    Bin["bin/*.sh<br/>setup helpers"]
-    Acc["account/*.mjs<br/>browser &amp; Android flows"]
-    OAI["openai/*.mjs<br/>OpenAI flows"]
-    AG["antigravity/*.mjs<br/>Antigravity pipeline"]
-    OAU["oauth/*.mjs<br/>OAuth setup"]
-    Tst["tests/*.mjs<br/>smoke &amp; QA"]
-  end
+    subgraph EntryPoints["Entry Points (account/, openai/, oauth/, antigravity/, bin/)"]
+        CLI["CLI scripts<br/>create-accounts.mjs, youtube-signup.mjs, ..."]
+        MCP["MCP servers<br/>gmail-creator-mcp.mjs, openai-creator-mcp.mjs"]
+        Shell["Shell bootstrappers<br/>bin/setup-credentials.sh, bin/setup_frida.sh"]
+    end
 
-  subgraph Lib["lib/ shared library / 공유 라이브러리"]
-    Br["browser-launch.mjs"]
-    CDP["cdp-utils.mjs"]
-    ADB["adb-utils.mjs"]
-    SMS["sms-provider.mjs"]
-    Proxy["proxy-config.mjs<br/>proxy-forwarder.mjs<br/>proxy-relay.mjs"]
-    OAuth["oauth-callback-server.mjs<br/>token-exchange.mjs"]
-    FP["fingerprint-config.mjs<br/>behavior-profile.mjs"]
-    V["verification-pipeline.mjs"]
-    CLI["cli-args.mjs"]
-  end
+    subgraph LibLayer["Shared Library (lib/)"]
+        Browser["browser-launch.mjs<br/>cdp-utils.mjs"]
+        Android["adb-utils.mjs<br/>(account/infrastructure/setup-emulator.mjs)"]
+        Proxy["proxy-config.mjs<br/>proxy-forwarder.mjs<br/>proxy-relay.mjs<br/>free-proxy.mjs"]
+        SMS["sms-provider.mjs"]
+        OAuth["oauth-callback-server.mjs<br/>token-exchange.mjs<br/>google-auth-browser.mjs"]
+        Verify["verification-pipeline.mjs"]
+        FP["fingerprint-config.mjs<br/>behavior-profile.mjs"]
+        Args["cli-args.mjs"]
+    end
 
-  subgraph Engines["Automation engines / 자동화 엔진"]
-    PW["rebrowser-playwright"]
-    MCP["@playwright/mcp<br/>@gongrzhe/server-gmail-autoauth-mcp"]
-    CDPraw["Chrome DevTools Protocol"]
-    AP["Appium / WebdriverIO"]
-    ADBraw["ADB + Frida"]
-  end
+    subgraph Integrations["External Integrations"]
+        Chromium["Chromium / Playwright / CDP"]
+        ADBDevice["Android Device or Emulator"]
+        Frida["Frida Runtime"]
+        SMSProvider["SMS Provider API"]
+        OAuthIdP["OAuth / GCP IdP"]
+        ProxyNet["Upstream Proxy Network"]
+    end
 
-  subgraph External["External / 외부 시스템"]
-    BrDev["Chromium / Chrome"]
-    Dev["Android emulator or redroid"]
-    SP["SMS provider API"]
-    Prx["Upstream proxy"]
-    GCP["Google Cloud OAuth"]
-    VSC["vscdb token storage"]
-  end
+    CLI --> Args
+    CLI --> Browser
+    CLI --> Android
+    CLI --> SMS
+    CLI --> OAuth
+    CLI --> Verify
+    CLI --> FP
+    MCP --> LibLayer
+    Shell --> LibLayer
 
-  subgraph Outputs["Outputs / 결과물"]
-    CSV["complete.csv<br/>openai-accounts.csv"]
-    JSON["antigravity-auth-results.json<br/>warmup-progress.json"]
-  end
-
-  Entrypoints --> Lib
-  Br --> PW --> BrDev
-  CDP --> CDPraw --> BrDev
-  ADB --> ADBraw --> Dev
-  AP --> Dev
-  SMS --> SP
-  Proxy --> Prx
-  OAuth --> GCP
-  AG --> VSC
-  Entrypoints --> Outputs
+    Browser --> Chromium
+    Android --> ADBDevice
+    Android --> Frida
+    Proxy --> ProxyNet
+    SMS --> SMSProvider
+    OAuth --> OAuthIdP
 ```
 
-**Layered responsibilities / 계층별 책임**
+Notes on the diagram:
 
-| Layer / 계층 | Responsibility / 책임 |
-|---|---|
-| `bin/`, `account/`, `openai/`, `antigravity/`, `oauth/`, `tests/` | Runnable flows. Each script wires the lower layers into one end-to-end task. / 실행 가능한 플로우 |
-| `lib/` | Reusable primitives: launching browsers, talking to CDP, talking to ADB, fetching SMS codes, negotiating proxies, finishing OAuth, emitting fingerprints, parsing CLI args, running the verification pipeline. / 재사용 가능한 프리미티브 |
-| Engines (Playwright, CDP, Appium, ADB/Frida) | External automation back-ends. / 외부 자동화 백엔드 |
-| External systems | The destinations the toolkit talks to. / 툴킷이 통신하는 대상 |
-| Outputs | CSV account records and JSON state files persisted alongside the run. / 실행 결과물 |
+- `LibLayer` modules are intentionally side-effect-light so multiple entry points can compose them without hidden global state.
+- `cli-args.mjs` is the canonical argv parser; new scripts are expected to delegate to it for flag handling consistency.
+- `Browser` and `Android` adapters never talk directly to `Integrations` — they always go through `Proxy` and `FP` so fingerprint and proxy settings remain consistent across runs.
 
 ---
 
 ## Quick Start / 빠른 시작
 
-> ⚠️ Most scripts touch third-party services. Read [Configuration](#configuration--설정) and the [intended-use notice](#overview--개요) before running anything against a real account. / 대부분의 스크립트는 외부 서비스에 영향을 미칩니다. 실제 계정에 대해 실행하기 전에 [설정](#configuration--설정)과 [사용 목적 안내](#overview--개요)를 읽어 주십시오.
+### 1. Prerequisites / 사전 요구사항
 
-### Prerequisites / 사전 준비
+- **Node.js 18+** (modules are ESM, `.mjs`).
+- **npm 9+** for `package-lock.json` resolution.
+- **Chromium** (Playwright-managed) for browser flows.
+- **Android platform tools** (`adb`) and optionally **Appium** for Android flows.
+- **Frida** server + `frida-tools` for SMS hook scripts.
+- **1Password CLI** if you intend to use `bin/setup-credentials.sh`.
+- A configured SMS provider account (see `lib/sms-provider.mjs` and `docs/ALTERNATIVE-SMS-PROVIDERS.md`).
 
-- **Node.js** compatible with the engines used (`rebrowser-playwright@^1.52`, `webdriverio@^9.27`, `@playwright/mcp@^0.0.76`). / 호환되는 Node.js 버전
-- **Chromium / Chrome** installed and reachable on `PATH` (Playwright browsers can be installed via `npx playwright install`). / 시스템 PATH에서 접근 가능한 Chromium/Chrome
-- **Android emulator** or a `redroid` container if you intend to run the ADB / Appium flows. / ADB/Appium 플로우를 사용할 경우 Android 에뮬레이터 또는 redroid 컨테이너
-- **Frida** on the target device for SMS hooks (`bin/setup_frida.sh`). / SMS 훅용 Frida
-- **Google Cloud project** with the OAuth APIs you intend to use, for the OAuth flows. / OAuth 플로우용 Google Cloud 프로젝트
-- **1Password service account** credentials if you want the bundled credential helper (`bin/setup-1password-service-account.sh`). / 1Password 서비스 계정 자격 증명
-
-### Install / 설치
+### 2. Install / 설치
 
 ```bash
-git clone <your-fork-or-mirror-url> gmail
+git clone <your-fork-url> gmail
 cd gmail
-npm install
+npm ci
 ```
 
-> The `package.json` declares a placeholder `main: "index.js"` and a no-op `npm test` script. There is no single entry point — run the scripts in `bin/`, `account/`, `openai/`, `antigravity/`, or `oauth/` directly via `node`. / `package.json`에는 자리표시자 `main: "index.js"`와 무동작 `npm test`만 정의되어 있습니다. 단일 진입점은 없으며, `bin/`, `account/`, `openai/`, `antigravity/`, `oauth/`의 스크립트를 `node`로 직접 실행합니다.
+### 3. Configure credentials / 자격 증명 설정
 
-### First run / 첫 실행
+```bash
+# Interactive credential bootstrap via 1Password
+./bin/setup-credentials.sh
 
-1. Configure credentials (see [Configuration](#configuration--설정)).
-2. Pick a flow. For example, the Gmail MCP creator:
-   ```bash
-   node account/gmail-creator-mcp.mjs
-   ```
-3. Or the OpenAI account flow:
-   ```bash
-   node openai/create-accounts.mjs
-   ```
-4. Read [`docs/QUICKSTART.md`](docs/QUICKSTART.md) for the bundled step-by-step guide. / 단계별 안내 문서 참조
+# Or set the 1Password service account used by the bootstrapper
+./bin/setup-1password-service-account.sh
+```
+
+These scripts populate the environment variables that `lib/cli-args.mjs` and the OAuth helpers expect. Never commit real credentials; `.gitignore` excludes the runtime files produced by these scripts.
+
+### 4. Run your first flow / 첫 실행
+
+```bash
+# Browser-based account creation
+node account/create-accounts.mjs --help
+
+# YouTube sign-up via CDP
+node account/youtube-signup-cdp.mjs --help
+
+# OAuth / GCP client setup
+node oauth/setup-gcp-oauth.mjs --help
+```
+
+Always read `--help` (powered by `lib/cli-args.mjs`) before running against real targets.
 
 ---
 
 ## Configuration / 설정
 
-There is no central configuration file. Each script reads what it needs (environment variables, CSV inputs, helper scripts in `bin/`) when it starts. The helpers in `bin/` exist to bootstrap credentials:
+Configuration is consumed through three channels, in order of precedence:
 
-| Helper / 헬퍼 | Purpose / 용도 |
-|---|---|
-| `bin/setup-credentials.sh` | Bootstrap local credential storage. / 로컬 자격 증명 저장소 부트스트랩 |
-| `bin/setup-1password-service-account.sh` | Configure a 1Password service account for secrets retrieval. / 비밀번호 검색용 1Password 서비스 계정 구성 |
-| `bin/setup_frida.sh` | Install/configure Frida on the target device. / 대상 기기에 Frida 설치/구성 |
-| `oauth/setup-gcp-oauth.mjs` | Configure a Google Cloud OAuth client (client ID/secret, scopes, redirect URIs). / Google Cloud OAuth 클라이언트 구성 |
-| `account/infrastructure/setup-emulator.mjs` | Prepare an Android emulator or `redroid` container. / Android 에뮬레이터 또는 redroid 컨테이너 준비 |
+1. **CLI flags** — every script accepts flags through `lib/cli-args.mjs`. Run any script with `--help` to see what it accepts.
+2. **Environment variables** — used for secrets and credentials. The 1Password bootstrappers in `bin/` write them into a local env file at runtime.
+3. **CSV / JSON data files** — `complete.csv` and `openai-accounts.csv` for account inventory, `data/warmup-progress.json` for warm-up state, `antigravity/antigravity-auth-results.json` for antigravity results.
 
-**Profile modules** (`lib/fingerprint-config.mjs`, `lib/behavior-profile.mjs`) are the right place to centralize fingerprint and behavior parameters per target environment. **Per-script CSV inputs** (e.g. `complete.csv`, `openai-accounts.csv`) define the batch inputs the verification and warm-up scripts iterate over. **State files** such as `data/warmup-progress.json` and `antigravity/antigravity-auth-results.json` persist progress across runs.
+### Environment variables / 환경 변수
 
-`lib/proxy-config.mjs` plus `lib/proxy-forwarder.mjs` / `lib/proxy-relay.mjs` define outbound proxy chains — point them at your own proxy infrastructure. See [Notes on private addresses](#notes-on-private-addresses--개인-ip에-대한-주의) below. / 송신 프록시 체인 정의. 아래 개인 IP 관련 주의사항 참조.
+| Variable                | Purpose                                                                |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `GMAIL_PROXY_LIST`      | Comma-separated proxy endpoints consumed by `lib/proxy-config.mjs`.   |
+| `SMS_PROVIDER_API_KEY`  | API key for the SMS provider configured in `lib/sms-provider.mjs`.     |
+| `SMS_PROVIDER_BASE_URL` | Base URL of the SMS provider (see `docs/ALTERNATIVE-SMS-PROVIDERS.md`). |
+| `GCP_OAUTH_CLIENT_ID`   | OAuth client ID for `oauth/setup-gcp-oauth.mjs`.                       |
+| `GCP_OAUTH_CLIENT_SECRET` | OAuth client secret paired with the ID above.                        |
+| `OP_SERVICE_ACCOUNT_TOKEN` | Token consumed by `bin/setup-1password-service-account.sh`.         |
+| `FRIDA_SERVER`          | Address of the Frida server (`host:port`) used by `bin/setup_frida.sh`. |
+| `ADB_DEVICE_SERIAL`     | Target Android device serial for `lib/adb-utils.mjs`.                  |
+
+> Do not commit real values. Use the `bin/setup-credentials.sh` flow or your secret manager of choice.
+
+### Fingerprint & behavior profiles / 핑거프린트·행동 프로필
+
+`lib/fingerprint-config.mjs` controls browser fingerprint randomization (UA, viewport, locale, timezone, WebGL hints) while `lib/behavior-profile.mjs` defines the per-account browsing patterns used by `account/warmup-account.mjs`. Both are intentionally data-driven so tests can pin deterministic values.
 
 ---
 
 ## Commands Reference / 명령어 참조
 
-> The exact flags and positional arguments are defined inside each script (`lib/cli-args.mjs` provides shared parsing). Run any script with `--help` where implemented, or read its source. Most scripts are invoked simply with `node <path>/<script>.mjs`.
+The following entry points are the most commonly used. Each accepts `--help` via `lib/cli-args.mjs`.
 
-### Setup helpers / 설정 헬퍼
+### Account lifecycle / 계정 라이프사이클
 
-| Command / 명령 | Purpose / 용도 |
-|---|---|
-| `bash bin/setup-credentials.sh` | Initialize local credential stores. |
-| `bash bin/setup-1password-service-account.sh` | Configure 1Password service account access. |
-| `bash bin/setup_frida.sh` | Install/configure Frida on the device. |
-| `node oauth/setup-gcp-oauth.mjs` | Configure a Google Cloud OAuth client. |
-| `node account/infrastructure/setup-emulator.mjs` | Prepare an Android emulator or `redroid` container. |
-| `bash bin/create-gmail.sh` | Wrapper around the Gmail creation flows. |
+```bash
+# Browser-based batch account creation (Playwright)
+node account/create-accounts.mjs
 
-### OAuth / OAuth
+# CDP-only account creation (no Playwright orchestration)
+node account/create-accounts-cdp.mjs
 
-| Command / 명령 | Purpose / 용도 |
-|---|---|
-| `node oauth/oauth-login.mjs` | Drive an OAuth login against the configured GCP client. |
+# Android-based account creation via ADB
+node account/create-accounts-adb.mjs
 
-### Google account flows / Google 계정 플로우
+# Android-based account creation via Appium / WebDriverIO
+node account/create-accounts-appium.mjs
 
-| Command / 명령 | Purpose / 용도 |
-|---|---|
-| `node account/create-accounts.mjs` | Generic multi-engine account creator. |
-| `node account/create-accounts-cdp.mjs` | Account creation over raw Chrome DevTools Protocol. |
-| `node account/create-accounts-appium.mjs` | Account creation via Appium on an Android device. |
-| `node account/create-accounts-adb.mjs` | Account creation driven by ADB alone. |
-| `node account/puppeteer-gmail.mjs` | Puppeteer-based Gmail sign-up. |
-| `node account/gmail-creator-mcp.mjs` | Gmail creation exposed via MCP. |
-| `node account/redroid-signup-cdp.mjs` | Sign-up flow targeting a `redroid` container via CDP. |
-| `node account/youtube-signup.mjs` | YouTube sign-up (browser). |
-| `node account/youtube-signup-cdp.mjs` | YouTube sign-up via CDP. |
-| `node account/family-group.mjs` | Family-group configuration on an existing account. |
-| `node account/verify-age.mjs` | Age verification helper. |
+# redroid container sign-up via CDP
+node account/redroid-signup-cdp.mjs
 
-### Verification, warm-up, diagnostics / 검증, 워밍업, 진단
+# YouTube sign-up
+node account/youtube-signup.mjs
+node account/youtube-signup-cdp.mjs
 
-| Command / 명령 | Purpose / 용도 |
-|---|---|
-| `node account/verify-account.mjs` | Verify a single account. |
-| `node account/verify-all-accounts.mjs` | Verify every account in the batch. |
-| `node account/process-batch-verification.mjs` | Run the verification pipeline across the batch CSV. |
-| `node account/warmup-account.mjs` | Run warm-up activity on an account. |
-| `node account/check-account-exists.mjs` | Probe whether an account exists. |
-| `node account/diagnostic-login.mjs` | Diagnostic login flow. |
-| `node account/direct-login-test.mjs` | Direct-login test path. |
-| `node account/cdp-login-test.mjs` | Login test over CDP. |
-| `node account/debug-sms-capture.mjs` | Debug the SMS capture / Frida hook path. |
-| `node account/infrastructure-diagnostic.mjs` | Infrastructure health check. |
-| `node account/test-partner-oauth.mjs` | Partner OAuth integration test. |
+# Puppeteer-style Gmail creator
+node account/puppeteer-gmail.mjs
+
+# Existence check
+node account/check-account-exists.mjs --email <addr>
+```
+
+### Verification / 인증
+
+```bash
+# Single-account verification (SMS, age, etc.)
+node account/verify-account.mjs --email <addr>
+
+# Age verification
+node account/verify-age.mjs --email <addr>
+
+# Bulk verification
+node account/verify-all-accounts.mjs
+
+# Batch verification driver
+node account/process-batch-verification.mjs
+```
+
+### Warm-up / 웜업
+
+```bash
+# Per-account organic-style warm-up
+node account/warmup-account.mjs --email <addr>
+```
+
+State is persisted to `data/warmup-progress.json` so warm-up is resumable.
+
+### OAuth & Google / OAuth & Google
+
+```bash
+# GCP OAuth client bootstrap
+node oauth/setup-gcp-oauth.mjs
+
+# Headless OAuth login
+node oauth/oauth-login.mjs
+
+# Browser-based Google auth helper
+node lib/google-auth-browser.mjs --help
+```
 
 ### OpenAI / OpenAI
 
-| Command / 명령 | Purpose / 용도 |
-|---|---|
-| `node openai/create-accounts.mjs` | OpenAI account creation batch. |
-| `node openai/check-accounts.mjs` | Check the status of OpenAI accounts. |
-| `node openai/openai-creator-mcp.mjs` | OpenAI creator exposed via MCP. |
+```bash
+node openai/create-accounts.mjs
+node openai/check-accounts.mjs
+```
 
-### Antigravity / Antigravity
+### Antigravity / VS Code vscdb / 안티그래비티
 
-| Command / 명령 | Purpose / 용도 |
-|---|---|
-| `node antigravity/antigravity-auth.mjs` | Run the Antigravity authentication flow. |
-| `node antigravity/antigravity-pipeline.mjs` | End-to-end Antigravity pipeline. |
-| `node antigravity/manual-token-acquire.mjs` | Acquire an Antigravity token manually. |
-| `node antigravity/inject-vscdb-token.mjs` | Inject a token into the `vscdb` token store. |
-| `node antigravity/unlock-features.mjs` | Unlock Antigravity features post-auth. |
+```bash
+node antigravity/antigravity-pipeline.mjs
+node antigravity/antigravity-auth.mjs
+node antigravity/unlock-features.mjs
+node antigravity/inject-vscdb-token.mjs
+node antigravity/manual-token-acquire.mjs
+```
+
+### MCP servers / MCP 서버
+
+```bash
+# Gmail creator over MCP
+node account/gmail-creator-mcp.mjs
+
+# OpenAI creator over MCP
+node openai/openai-creator-mcp.mjs
+```
+
+These expose the toolkit to MCP-compatible clients (e.g., Claude Desktop or `@playwright/mcp`-style hosts).
+
+### Shell bootstrappers / 셸 부트스트래퍼
+
+```bash
+./bin/setup-credentials.sh
+./bin/setup-1password-service-account.sh
+./bin/create-gmail.sh
+./bin/setup_frida.sh
+```
+
+### Diagnostics / 진단
+
+```bash
+node account/diagnostic-login.mjs
+node account/infrastructure-diagnostic.mjs
+node account/cdp-login-test.mjs
+node account/direct-login-test.mjs
+node tmp/debug-selects.mjs
+```
 
 ---
 
 ## Local Development / 로컬 개발
 
-- **Run any script directly.** `node <path>/<script>.mjs` is the standard invocation. The library is plain ESM (`.mjs`) and resolved through Node's module rules — no bundler is used. / 모든 스크립트는 `node`로 직접 실행하며 번들러를 사용하지 않습니다.
-- **Shared parsing.** Use `lib/cli-args.mjs` for consistent CLI argument handling when adding new scripts. / 새 스크립트에는 `lib/cli-args.mjs`를 사용해 CLI 인자 처리를 일관되게 유지하십시오.
-- **Adding a new engine.** Implement an adapter in `lib/` (following the patterns in `lib/browser-launch.mjs`, `lib/cdp-utils.mjs`, `lib/adb-utils.mjs`), then add a thin script under `account/`, `openai/`, or `antigravity/` that wires it together. / 새 엔진 어댑터를 `lib/`에 추가한 다음 얇은 스크립트를 작성해 연결합니다.
-- **MCP integration.** The package depends on `@modelcontextprotocol/sdk`, `@playwright/mcp`, and `@gongrzhe/server-gmail-autoauth-mcp`. See those projects' documentation for transport options; the scripts `account/gmail-creator-mcp.mjs`, `openai/openai-creator-mcp.mjs`, and `oauth/oauth-login.mjs` are the entry points exposed through MCP. / MCP 전송 옵션은 해당 패키지 문서를 참조하십시오.
-- **Lint/format.** No enforced linter or formatter is configured in `package.json`. Follow the existing module style (ESM, two-space indent, single-quoted strings). / `package.json`에 린터/포맷터가 설정되어 있지 않으므로 기존 모듈 스타일을 따르십시오.
+### Code style / 코드 스타일
+
+- All scripts are **ESM** (`.mjs`) and target Node.js 18+.
+- Shared logic lives in `lib/`; entry points must not inline business logic that belongs in a shared module.
+- New CLI scripts should use `lib/cli-args.mjs` for argument parsing so help output stays consistent.
+- New browser launches should go through `lib/browser-launch.mjs` so proxy and fingerprint defaults apply uniformly.
+
+### Adding a new entry point / 새 진입점 추가
+
+1. Implement the flow as one or more modules under `lib/` if it has reusable logic.
+2. Add a thin `.mjs` script in the appropriate directory (`account/`, `openai/`, `oauth/`, `antigravity/`).
+3. Wire argument parsing through `lib/cli-args.mjs`.
+4. Provide a `--help` block and document the script in this README's *Commands Reference*.
+
+### Working with Android / Android 작업
+
+- Use `account/infrastructure/setup-emulator.mjs` to bootstrap a local emulator.
+- `lib/adb-utils.mjs` wraps `adb` so callers don't deal with raw shell.
+- `account/frida-sms-hook.js` and `bin/setup_frida.sh` are the canonical Frida entry points.
+- For redroid containers, prefer `account/redroid-signup-cdp.mjs` and `account/create-accounts-adb.mjs`.
+
+### Working with proxies / 프록시 작업
+
+- `lib/proxy-config.mjs` is the source of truth for proxy selection.
+- `lib/proxy-forwarder.mjs` and `lib/proxy-relay.mjs` handle transport; new transports should plug in here.
+- `lib/free-proxy.mjs` is provided for research-grade free proxies only — production runs must use paid/private proxies.
+
+### Linting and formatting / 린트·포맷팅
+
+The repository intentionally ships without a custom lint config to remain framework-agnostic. Use your editor's defaults or add a local `eslint`/`prettier` config without committing it.
 
 ---
 
 ## Testing / 테스트
 
-The `tests/` directory contains smoke and manual QA scripts:
+The `tests/` directory contains smoke tests and a manual QA checklist:
 
-| Script / 스크립트 | Purpose / 용도 |
-|---|---|
-| `tests/gmail-creator-mcp-smoke.mjs` | Smoke test for the Gmail MCP creator. |
-| `tests/qa-manual.mjs` | Manual QA walk-through. |
+```bash
+# MCP smoke test for the Gmail creator
+node tests/gmail-creator-mcp-smoke.mjs
 
-The default `npm test` script is a placeholder that exits with an error (`Error: no test specified`). Replace it with your preferred runner (e.g. add a real test framework under `tests/`) if you want a `npm test` entry point. / 기본 `npm test`는 자리표시자이므로 필요 시 실제 테스트 러너로 교체하십시오.
+# Manual QA checklist
+node tests/qa-manual.mjs
+```
+
+The default `npm test` script is a placeholder:
+
+```json
+"scripts": {
+  "test": "echo \"Error: no test specified\" && exit 1"
+}
+```
+
+This is intentional: the project's value is in integration scenarios that require live credentials and infrastructure, not in unit tests. Treat the scripts in `tests/` as **integration smoke tests** that you run against disposable accounts on your own infrastructure only.
+
+For deterministic checks during development, prefer:
+
+- `account/diagnostic-login.mjs` to validate login flows.
+- `tmp/debug-selects.mjs` for selector regression checks.
+- `account/infrastructure-diagnostic.mjs` to validate Android/ADB/Frida setup.
 
 ---
 
 ## Documentation / 문서
 
-Long-form documentation lives in [`docs/`](docs/):
+Long-form documentation lives in `docs/`:
 
-- [`docs/QUICKSTART.md`](docs/QUICKSTART.md) — Step-by-step first-run guide.
-- [`docs/adb-gmail-creation.md`](docs/adb-gmail-creation.md) — ADB-based Gmail creation reference.
-- [`docs/ALTERNATIVE-SMS-PROVIDERS.md`](docs/ALTERNATIVE-SMS-PROVIDERS.md) — How to plug alternative SMS providers into `lib/sms-provider.mjs`.
-- [`docs/verification-bypass-analysis.md`](docs/verification-bypass-analysis.md) — Notes on verification flows.
-- [`openai/README.md`](openai/README.md) — OpenAI-flow-specific notes.
-- [`AGENTS.md`](AGENTS.md) — Operating notes for AI/automation agents working in the repo.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — Contribution guidelines.
+- `docs/QUICKSTART.md` — guided first-run walkthrough.
+- `docs/adb-gmail-creation.md` — Android-driven Gmail creation flow.
+- `docs/ALTERNATIVE-SMS-PROVIDERS.md` — pluggable SMS providers and how to add one.
+- `docs/verification-bypass-analysis.md` — research notes on verification path analysis.
 
----
+Per-module READMEs:
 
-## Notes on private addresses / 개인 IP에 대한 주의
+- `openai/README.md` — OpenAI-specific notes.
 
-The toolkit talks to upstream proxies, emulator hosts, and `redroid` containers. **Do not hardcode private network addresses** (RFC1918 ranges such as `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`) or specific LXC/container numbers in committed code or documentation — use placeholders such as `<emulator-host>` or `<proxy-host>` instead, or read them from environment variables. / 커밋된 코드나 문서에 RFC1918 사설 IP 대역(`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`)이나 LXC/컨테이너 번호를 하드코딩하지 말고, 자리표시자(`<emulator-host>`, `<proxy-host>`) 또는 환경 변수를 사용하십시오.
+Root-level contributor docs:
+
+- `AGENTS.md` — guidance for AI agents and human contributors.
+- `CONTRIBUTING.md` — contribution workflow.
 
 ---
 
 ## Contributing / 기여
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). General guidelines:
+Contributions are welcome. Before opening a pull request:
 
-- Keep new scripts thin; push reusable logic into `lib/`. / 새 스크립트는 얇게 유지하고 재사용 가능한 로직은 `lib/`에 추가하십시오.
-- Follow the existing ESM module style. / 기존 ESM 스타일을 따르십시오.
-- Avoid committing generated credentials, real account CSVs, or large JSON state files. Use the existing `complete.csv`, `openai-accounts.csv`, `data/warmup-progress.json`, and `antigravity/antigravity-auth-results.json` only as illustrative examples — replace them with empty/sanitized versions if you fork the project. / 생성된 자격 증명이나 실제 계정 CSV, 대용량 JSON 상태 파일은 커밋하지 마십시오.
-- When you change a public script's CLI surface, update this README's **Commands Reference**. / CLI 표면을 변경할 때 본 README의 명령어 참조를 업데이트하십시오.
+1. Read `CONTRIBUTING.md` and `AGENTS.md`.
+2. Open an issue describing the change — new entry points, library modules, or provider adapters should be discussed first.
+3. Keep entry points thin; push logic into `lib/`.
+4. Update `docs/` when you add a new flow, provider, or transport.
+5. Do not commit credentials, real account inventories, or live proxy endpoints.
+
+For security disclosures, follow the policy in `CONTRIBUTING.md` rather than filing a public issue.
 
 ---
 
 ## License / 라이선스
 
-ISC — see [`LICENSE`](LICENSE).
+ISC — see `LICENSE` for the full text.
+
+본 프로젝트는 ISC 라이선스로 배포됩니다. 전문은 `LICENSE` 파일을 참고하십시오.
