@@ -7,11 +7,33 @@
 
 ## 한국어 요약
 
-Node.js(ESM) 자동화 워크스페이스로, 브라우저 및 Android 기반 워크플로우의 유지보수와 진단을 위한 코드 베이스를 제공합니다. 백엔드로 Playwright/Rebrowser, Puppeteer, Chrome DevTools Protocol(CDP), Appium/WDIO, ADB, Frida를 사용하며, AI 에이전트 통합을 위한 Model Context Protocol(MCP) stdio 서버와 OAuth 콜백 서버, SMS 제공자 추상화 계층, 플러거블 프록시 헬퍼를 함께 제공합니다. 스크립트는 운영 도메인(계정, OAuth, OpenAI, Antigravity, 인프라)별로 분리되어 공유 `lib/` 유틸리티 계층 위에서 실행됩니다. 이 저장소는 정당한 테스트, 내부 도구 개발, QA, 보안 연구 목적으로만 사용해야 합니다.
+Node.js(ESM) 자동화 워크스페이스로, 브라우저 및 Android 기반 워크플로우의 **유지보수와 진단**을 위한 코드 베이스를 제공합니다. 백엔드로 Playwright/Rebrowser, Puppeteer, Chrome DevTools Protocol(CDP), Appium/WDIO, ADB, Frida를 사용하며, AI 에이전트 통합을 위한 Model Context Protocol(MCP) stdio 서버와 OAuth 콜백 서버, SMS 제공자 추상화 계층, 플러거블 프록시 헬퍼를 함께 제공합니다. 스크립트는 운영 도메인(계정, OAuth, OpenAI, Antigravity, 인프라)별로 분리되어 공유 `lib/` 유틸리티 계층 위에서 실행됩니다. 이 저장소는 정당한 테스트, 내부 도구 개발, QA, 보안 연구 목적으로만 사용해야 합니다.
+
+## Status / 상태
+
+| 항목 / Item | 값 / Value | 출처 / Source |
+|---|---|---|
+| Runtime | Node.js (ESM, `.mjs`) | [`package.json`](./package.json) |
+| Package manager | npm | [`package-lock.json`](./package-lock.json) |
+| License | ISC | [`LICENSE`](./LICENSE) |
+| Status | 내부 / 리서치 (production-ready 아님) | 본 README |
+| `npm test` 동작 | placeholder (`echo Error && exit 1`) | [`package.json`](./package.json) |
+| MCP transport | stdio (stdout은 MCP 전용) | [`account/gmail-creator-mcp.mjs`](./account/gmail-creator-mcp.mjs) |
+| Browser 모드 | headless Linux 우선 권장 | [`lib/browser-launch.mjs`](./lib/browser-launch.mjs) |
+| 첫 진입점 (`main`) | `index.js` (현재 부재 — 실제 진입은 `account/`) | [`package.json`](./package.json) |
+
+## 운영 흐름 한눈에 / Operator flow at a glance
+
+1. **설치** — `npm install` 로 의존성(`@playwright/mcp`, `rebrowser-playwright`, `webdriverio`, `ws`, `jsqr`, `pngjs`, `@modelcontextprotocol/sdk`, `ghost-cursor-playwright`, `@gongrzhe/server-gmail-autoauth-mcp`)을 설치합니다.
+2. **분리 이해** — 스크립트 도메인은 `account/`, `oauth/`, `openai/`, `antigravity/`, `account/infrastructure/` 이고, 공유 유틸리티는 `lib/` 입니다.
+3. **진단 우선** — 실제 운영 시퀀스를 실행하기 전에 `lib/` 헬퍼와 MCP 서버의 `lib/` 진입점(`gmail-creator-mcp.mjs`, `openai-creator-mcp.mjs`)을 먼저 읽습니다.
+4. **MCP 통합** — stdio MCP 서버 두 종을 AI 에이전트 클라이언트에 등록하고, 진단 로그는 stderr 로만 출력합니다.
+5. **스모크 검증** — `node tests/gmail-creator-mcp-smoke.mjs` 로 MCP 메시지 채널이 살아 있는지 확인합니다 (root `npm test` 는 placeholder).
+6. **문서 참조** — 운영 세부사항은 [`docs/QUICKSTART.md`](./docs/QUICKSTART.md) 및 [`docs/`](./docs/) 의 분석 문서를 참고합니다.
 
 ## English summary
 
-A Node.js (ESM) workspace that hosts the maintenance and diagnostic code for browser- and Android-driven automation flows. It is built on Playwright/Rebrowser, Puppeteer, CDP, Appium/WDIO, ADB, and Frida, and ships two MCP stdio servers for AI-agent integration along with shared helpers for OAuth callbacks, SMS providers, and proxy routing. Scripts are grouped by operational domain (account, OAuth, OpenAI, Antigravity, infrastructure) and reuse a single `lib/` utility layer. This repository is intended for legitimate testing, internal tooling, QA, and security research only.
+A Node.js (ESM) workspace that hosts the **maintenance and diagnostic** code for browser- and Android-driven automation flows. It is built on Playwright/Rebrowser, Puppeteer, CDP, Appium/WDIO, ADB, and Frida, and ships two MCP stdio servers for AI-agent integration along with shared helpers for OAuth callbacks, SMS providers, and proxy routing. Scripts are grouped by operational domain (account, OAuth, OpenAI, Antigravity, infrastructure) and reuse a single `lib/` utility layer. This repository is intended for legitimate testing, internal tooling, QA, and security research only.
 
 ---
 
@@ -22,261 +44,277 @@ A Node.js (ESM) workspace that hosts the maintenance and diagnostic code for bro
 ## 목차 / Table of Contents
 
 1. [상태 / Status](#status--%EC%83%81%ED%83%9C)
-2. [빠른 흐름 / Quick Flow](#%EB%B9%A0%EB%A5%B8-%ED%9D%90%EB%A6%BC--quick-flow)
-3. [패키지 구성 / Package Contents](#%ED%8C%A8%ED%82%A4%EC%A7%80-%EA%B5%AC%EC%84%B1--package-contents)
-4. [먼저 읽을 파일 / First Files to Read](#%EB%A8%BC%EC%A0%80-%EC%9D%BD%EC%9D%84-%ED%8C%8C%EC%9D%BC--first-files-to-read)
-5. [API / 진입점 / Entry Points](#api--%EC%A7%84%EC%9E%85%EC%A0%90--entry-points)
-6. [Quickstart / 사용 시작](#quickstart--%EC%82%AC%EC%9A%A9-%EC%8B%9C%EC%9E%91)
-7. [명령어 참조 / Commands Reference](#%EB%AA%85%EB%A0%B9%EC%96%B4-%EC%B0%B8%EC%A1%B0--commands-reference)
-8. [로컬 개발 / Local Development](#%EB%A1%9C%EC%BB%AC-%EA%B0%9C%EB%B0%9C--local-development)
-9. [테스트 / Testing](#%ED%85%8C%EC%8A%A4%ED%8C%85--testing)
-10. [유지보수자 / Maintainers](#%EC%9C%A0%EC%A7%80%EB%B3%B4%EC%88%98%EC%9E%90--maintainers)
-11. [기여 / Contributing](#%EA%B8%B0%EC%97%AC--contributing)
-12. [추가 문서 / Further Documentation](#%EC%B6%94%EA%B0%80-%EB%AC%B8%EC%84%9C--further-documentation)
-13. [라이선스 / License](#%EB%9D%BC%EC%9D%B4%EC%84%A0%EC%8A%A4--license)
+2. [목적 / Purpose](#목적--purpose)
+3. [패키지 구성 / Package Contents](#패키지-구성--package-contents)
+4. [저장소 레이아웃 / Repository Layout](#저장소-레이아웃--repository-layout)
+5. [먼저 읽을 파일 / First Files to Read](#먼저-읽을-파일--first-files-to-read)
+6. [아키텍처 / Architecture](#아키텍처--architecture)
+7. [진입점 / API & Entry Points](#진입점--api--entry-points)
+8. [빠른 시작 / Quickstart](#빠른-시작--quickstart)
+9. [설정 / Configuration](#설정--configuration)
+10. [명령 참조 / Commands Reference](#명령-참조--commands-reference)
+11. [로컬 개발 / Local Development](#로컬-개발--local-development)
+12. [테스트 / Testing](#테스트--testing)
+13. [기여 / Contributing](#기여--contributing)
+14. [유지보수자 / Maintainers & Contact](#유지보수자--maintainers--contact)
+15. [라이선스 / License](#라이선스--license)
+16. [추가 문서 / Further Documentation](#추가-문서--further-documentation)
 
----
+## 목적 / Purpose
 
-## 상태 / Status
+이 저장소는 정당한 테스트·내부 도구·QA·보안 연구 시나리오에서 사용할 수 있는 Node.js ESM 자동화 워크스페이스의 **유지보수 표면**입니다. 코드는 다음을 지원합니다.
 
-| 영역 / Area | 상태 / Status | 메모 / Notes |
-|---|---|---|
-| 안정성 / Stability | 내부 / Research | 운영 환경 검증 전 |
-| 사용 범위 / Intended use | 유지보수·진단 / Maintenance & diagnostics | 자동화 런북은 본 저장소에서 분리 유지 |
-| 테스트 / Tests | 스모크 체크만 / Smoke checks only | 루트 `npm test`는 플레이스홀더 |
-| MCP 전송 / MCP transport | stdio | stdout은 프로토콜 전용, 진단은 stderr로 |
-| 브라우저 모드 / Browser mode | 헤드리스 Linux 가정 | X 서버 없이는 헤디드 모드 비추천 |
-| 의존성 잠금 / Lock file | `package-lock.json` | 재현 가능한 설치 지원 |
-| 문서 / Docs | `docs/`, `openai/README.md`, `AGENTS.md` | 운영 예시는 `docs/` 참조 |
+- 브라우저 자동화(Playwright/Rebrowser, Puppeteer, CDP) 및 Android 자동화(Appium/WDIO, ADB, Frida).
+- AI 에이전트 통합용 MCP stdio 서버 두 종.
+- 로컬 OAuth 콜백 처리, 프록시 정규화, SMS 제공자 추상화, 클라이언트 프로파일링 헬퍼.
+- Antigravity 및 OpenAI 도메인에 대한 별도 운영 스크립트.
 
-## 빠른 흐름 / Quick Flow
-
-운영자가 신규 환경에서 코드 베이스를 점검할 때 따르는 흐름입니다. 자동화 시나리오 실행이 아닌, **유지보수와 진단 관점**의 절차입니다.
-
-1. 저장소를 클론하고 Node.js 의존성을 설치합니다. → `npm install`
-2. `package.json`과 `lib/AGENTS.md`로 공유 헬퍼 표면을 파악합니다.
-3. 도메인 디렉터리(`account/`, `antigravity/`, `oauth/`, `openai/`)의 자식 `AGENTS.md`를 읽고 진입점 규약을 확인합니다.
-4. MCP 서버는 `node account/gmail-creator-mcp.mjs` 또는 `node openai/openai-creator-mcp.mjs`로 stdio 실행합니다.
-5. 회귀 확인은 `tests/gmail-creator-mcp-smoke.mjs`로 스모크 체크합니다.
-6. 자세한 운영 절차는 `docs/`의 문서를 참조합니다.
-
----
+이 README 는 **운영 플레이북**(계정 생성, 인증 우회, SMS/프록시 설정 절차)이 아니라, 새로운 기여자가 코드 베이스를 빠르게 이해하고 안전하게 수정하기 위한 **진단·유지보수 가이드**입니다. 실행 가능한 운영 시퀀스는 [`docs/`](./docs/) 의 개별 문서를 참고하세요.
 
 ## 패키지 구성 / Package Contents
 
-도메인별로 분리된 디렉터리 구조입니다. 각 영역은 독립적으로 import 가능하며, 공통 로직은 `lib/`을 거치도록 설계되어 있습니다.
-
-| 경로 / Path | 역할 / Role | 진입점 / Entry point |
+| 영역 / Area | 디렉터리 / Directory | 역할 / Role |
 |---|---|---|
-| `account/` | Gmail·YouTube 등 계정 도메인 스크립트와 MCP 서버 | `account/gmail-creator-mcp.mjs` (MCP), `account/create-accounts.mjs` (배치) |
-| `antigravity/` | Antigravity 계정 상태 및 토큰 유지보수 | `antigravity/antigravity-pipeline.mjs` |
-| `oauth/` | OAuth 자격 증명·로그인 협소 래퍼 | `oauth/oauth-login.mjs`, `oauth/setup-gcp-oauth.mjs` |
-| `openai/` | OpenAI 도메인 스크립트와 MCP 서버 | `openai/openai-creator-mcp.mjs` (MCP) |
-| `lib/` | 공유 헬퍼(브라우저, CDP, ADB, 프록시, SMS, CLI, 콜백 서버) | `lib/browser-launch.mjs`, `lib/oauth-callback-server.mjs` |
-| `bin/` | 셸 래퍼 및 로컬 URL 처리 도구 | `bin/setup-*.sh`, `bin/xdg-open` |
-| `tests/` | MCP 스모크 체크 | `tests/gmail-creator-mcp-smoke.mjs`, `tests/qa-manual.mjs` |
-| `docs/` | 운영 문서 및 분석 | `docs/QUICKSTART.md` 등 |
-| `data/` | 프로젝트 데이터 입력 | `data/warmup-progress.json` |
-| `tmp/` | 일시적 디버깅 산출물 | `tmp/ui.xml` 등 |
+| Main script surface | [`account/`](./account/) | Gmail 지향 MCP 서버와 운영 스크립트 모음. 가장 큰 스크립트 영역. |
+| Antigravity helpers | [`antigravity/`](./antigravity/) | 로컬 상태 파일 및 서브프로세스 오케스트레이션용 헬퍼. |
+| Shared utilities | [`lib/`](./lib/) | CLI 파서, 브라우저 런처, 콜백 서버, 프록시 정규화, CDP/ADB 유틸. |
+| OAuth | [`oauth/`](./oauth/) | 좁은 범위의 OAuth 자격 증명/로그인 도우미. |
+| OpenAI surface | [`openai/`](./openai/) | OpenAI 지향 별도 스크립트 및 MCP 서버. |
+| Smoke tests | [`tests/`](./tests/) | MCP 스모크 검사 (수동 실행). |
+| Docs | [`docs/`](./docs/) | 분석 및 운영 세부 문서. |
+| Shell helpers | [`bin/`](./bin/) | 셸 래퍼 및 로컬 URL 인터셉션 헬퍼. |
+| Data inputs | [`data/`](./data/) | 워밍업 진행 상태 등 프로젝트 데이터 입력. |
+| Manifest | [`package.json`](./package.json) | npm 의존성; `npm test` 는 현재 placeholder. |
 
-### 도메인별 핵심 심볼 / Key symbols by domain
+## 저장소 레이아웃 / Repository Layout
 
-| 심볼 / Symbol | 종류 / Kind | 위치 / Location | 역할 / Role |
-|---|---|---|---|
-| `main` | function | `account/create-accounts.mjs` | 배치 오케스트레이션 진입점 |
-| `createAccountWithRetries` | function | `account/create-accounts.mjs` | 단일 플로우 재시도 정책 |
-| `Server` | top-level | `account/gmail-creator-mcp.mjs` | MCP 도구 등록·작업 관리·CSV 파싱 |
-| `parseAccountsCsv` | function | `account/gmail-creator-mcp.mjs`, `antigravity/antigravity-pipeline.mjs` | 멀티라인 허용 CSV 파싱 |
-| `main` | function | `antigravity/antigravity-pipeline.mjs` | 로컬 계정 상태 오케스트레이션 |
-| `encodeOAuthTokenInfo` | function | `antigravity/inject-vscdb-token.mjs` | 로컬 상태 기록용 프로토버프 인코딩 |
-| `createCallbackServer` | function | `lib/oauth-callback-server.mjs` | 타임아웃·종료 시맨틱을 가진 로컬 HTTP 콜백 서버 |
-| `launchBrowser` | function | `lib/browser-launch.mjs` | Playwright/Rebrowser 공통 래퍼 |
-| `parseCliArgs` | function | `lib/cli-args.mjs` | 이메일/비밀번호 스크립트용 단순 CLI 파서 |
-| `createProxyConfig` | function | `lib/proxy-config.mjs` | 프록시 옵션 정규화 및 경고 메타 |
-| `Server` | top-level | `openai/openai-creator-mcp.mjs` | 별도 MCP stdio 서버 표면 |
-
----
+| 경로 / Path | 종류 / Type | 비고 / Note |
+|---|---|---|
+| `AGENTS.md` | 문서 | 저장소 유지보수 가이드. |
+| `CONTRIBUTING.md` | 문서 | 기여 절차. |
+| `LICENSE` | 문서 | ISC 라이선스 전문. |
+| `README.md` | 문서 | 본 문서. |
+| `package.json` / `package-lock.json` | 매니페스트 | 의존성 목록 (MCP SDK, Playwright, WDIO 등). |
+| `complete.csv`, `openai-accounts.csv` | 데이터 | CSV 입력 — 멀티라인 허용 파서 사용. |
+| `bin/` | 셸 | `create-gmail.sh`, `setup-*.sh`, `xdg-open`. |
+| `oauth/` | ESM 스크립트 | OAuth 콜백/자격 증명 도우미. |
+| `account/` | ESM 스크립트 | 메인 운영 스크립트 + Gmail MCP stdio 서버. |
+| `account/infrastructure/` | ESM 스크립트 | 에뮬레이터 셋업 헬퍼. |
+| `antigravity/` | ESM 스크립트 | Antigravity 상태/토큰 유지보수. |
+| `openai/` | ESM 스크립트 | OpenAI 운영 스크립트 + 별도 MCP 서버. |
+| `lib/` | 공유 모듈 | CLI·브라우저·OAuth·프록시·SMS·CDP·ADB 헬퍼. |
+| `docs/` | 문서 | 분석 문서 (예: `verification-bypass-analysis.md`). |
+| `tests/` | ESM 스크립트 | MCP 스모크 검사. |
+| `data/` | JSON | `warmup-progress.json` 등. |
+| `tmp/` | 일시 | 디버그용 임시 파일 (운영 산출물 X). |
 
 ## 먼저 읽을 파일 / First Files to Read
 
-저장소를 처음 접할 때 아래 순서로 읽으면 도메인 경계와 규약을 빠르게 잡을 수 있습니다.
+새로운 기여자는 아래 순서로 코드 베이스를 훑어 보길 권장합니다.
 
-| 순서 / # | 파일 / File | 이유 / Why |
+1. [`AGENTS.md`](./AGENTS.md) — 저장소 규칙·구조 요약.
+2. [`package.json`](./package.json) — 의존성과 스크립트 진입점.
+3. [`lib/cli-args.mjs`](./lib/cli-args.mjs) — 모든 스크립트가 공유하는 CLI 파서.
+4. [`lib/browser-launch.mjs`](./lib/browser-launch.mjs) — Playwright/Rebrowser 공통 런처.
+5. [`lib/oauth-callback-server.mjs`](./lib/oauth-callback-server.mjs) — 로컬 HTTP 콜백 서버.
+6. [`lib/proxy-config.mjs`](./lib/proxy-config.mjs) — 프록시 옵션 정규화.
+7. [`account/gmail-creator-mcp.mjs`](./account/gmail-creator-mcp.mjs) — Gmail 도메인 MCP stdio 서버.
+8. [`openai/openai-creator-mcp.mjs`](./openai/openai-creator-mcp.mjs) — OpenAI 도메인 MCP stdio 서버.
+9. [`antigravity/antigravity-pipeline.mjs`](./antigravity/antigravity-pipeline.mjs) — Antigravity 로컬 상태 오케스트레이션.
+10. [`tests/gmail-creator-mcp-smoke.mjs`](./tests/gmail-creator-mcp-smoke.mjs) — MCP 메시지 채널 스모크 검사.
+
+## 아키텍처 / Architecture
+
+이 워크스페이스는 **도메인별 디렉터리** 위에 **단일 공유 `lib/` 계층**을 얹은 구조입니다. 두 개의 stdio MCP 서버가 AI 에이전트 표면을 제공하고, 운영 스크립트는 도메인 디렉터리에서 `lib/` 헬퍼를 재사용합니다.
+
+| 계층 / Layer | 위치 / Location | 책임 / Responsibility |
 |---|---|---|
-| 1 | `AGENTS.md` | 프로젝트 지식 베이스, 구조와 규약 |
-| 2 | `package.json` | 의존성과 런타임 버전 |
-| 3 | `lib/AGENTS.md` | 공유 헬퍼 표면과 재사용 규칙 |
-| 4 | `account/AGENTS.md` | 가장 큰 스크립트 영역의 진입점 규약 |
-| 5 | `openai/AGENTS.md` | OpenAI 표면 규약 |
-| 6 | `antigravity/AGENTS.md` | 토큰·상태 유지보수 규약 |
-| 7 | `docs/QUICKSTART.md` | 운영 컨텍스트 보조 문서 |
+| AI 에이전트 표면 | `account/gmail-creator-mcp.mjs`, `openai/openai-creator-mcp.mjs` | MCP stdio 서버; 도구 등록·작업 관리·CSV 파싱. |
+| 운영 스크립트 | `account/`, `oauth/`, `antigravity/`, `openai/`, `account/infrastructure/` | 도메인별 워크플로우 오케스트레이션. |
+| 공유 유틸리티 | `lib/` | CLI 파싱, 브라우저 런치, OAuth 콜백, 프록시 정규화, SMS 추상화, CDP/ADB 헬퍼, 행동 프로파일링. |
+| 데이터 입력 | `*.csv`, `data/*.json` | 멀티라인 허용 파서(`parseAccountsCsv`)로 읽음. |
+| 진단 산출물 | 로컬 CSV/JSON/스크린샷/덤프 | 운영자가 검사하는 일시 산출물 (저장소에 커밋하지 않음 권장). |
+| 셸 진입 | `bin/` | 자격 증명 셋업, Frida 환경 셋업, `xdg-open` 등 보조. |
 
----
+### 요청 흐름 (Request flow)
 
-## API / 진입점 / Entry Points
+1. AI 에이전트 클라이언트가 `account/gmail-creator-mcp.mjs` (또는 `openai/openai-creator-mcp.mjs`) 를 stdio 자식 프로세스로 기동합니다.
+2. MCP 서버는 **stdout 에 MCP 메시지만** 쓰고, 진단 로그는 **stderr** 로 보냅니다.
+3. 도구 호출이 들어오면 서버는 `lib/cli-args.mjs` 와 `lib/oauth-callback-server.mjs` 같은 공유 헬퍼를 통해 흐름을 구성합니다.
+4. 브라우저가 필요하면 `lib/browser-launch.mjs` 가 headless 친화적인 Playwright/Rebrowser 인스턴스를 띄웁니다.
+5. CSV 입력은 멀티라인 허용 파서(`parseAccountsCsv`)로 정규화되어 도메인 스크립트로 전달됩니다.
+6. Android 흐름이 필요하면 `account/infrastructure/setup-emulator.mjs` 와 `lib/adb-utils.mjs`, `lib/cdp-utils.mjs` 가 관여합니다.
+7. 운영 결과(계정 상태 토큰, 검증 로그 등)는 로컬 JSON/CSV 로 기록되며, 후속 진단에서 `lib/antigravity-shared.mjs` 등으로 재읽기 됩니다.
 
-MCP 서버, CLI 스크립트, 라이브러리 진입점을 분리해서 정리합니다. **이 표는 코드 위치와 시그니처만 안내하며, 실행 가능한 자동화 절차는 포함하지 않습니다.**
+### 공유 헬퍼 참조 (Shared helpers)
 
-| 종류 / Kind | 진입점 / Entry | 전송·호출 방식 / Transport | 진단 출력 / Diagnostics |
+| 헬퍼 / Helper | 파일 / File | 역할 / Role |
+|---|---|---|
+| CLI 파서 | [`lib/cli-args.mjs`](./lib/cli-args.mjs) | 이메일/비밀번호 스크립트용 단순 argv 파서. |
+| 브라우저 런처 | [`lib/browser-launch.mjs`](./lib/browser-launch.mjs) | Playwright/Rebrowser 공통 실행. |
+| OAuth 콜백 서버 | [`lib/oauth-callback-server.mjs`](./lib/oauth-callback-server.mjs) | 타임아웃/종료 의미론을 갖춘 로컬 HTTP 서버. |
+| 프록시 정규화 | [`lib/proxy-config.mjs`](./lib/proxy-config.mjs) | 프록시 옵션 정규화 및 경고 메타데이터. |
+| 프록시 릴레이 | [`lib/proxy-relay.mjs`](./lib/proxy-relay.mjs), [`lib/proxy-forwarder.mjs`](./lib/proxy-forwarder.mjs) | 트래픽 릴레이·포워딩 헬퍼. |
+| CDP 유틸 | [`lib/cdp-utils.mjs`](./lib/cdp-utils.mjs) | Chrome DevTools Protocol 공통 함수. |
+| ADB 유틸 | [`lib/adb-utils.mjs`](./lib/adb-utils.mjs) | Android Debug Bridge 공통 함수. |
+| 행동 프로파일링 | [`lib/behavior-profile.mjs`](./lib/behavior-profile.mjs), [`lib/fingerprint-config.mjs`](./lib/fingerprint-config.mjs) | 인간형 입력 패턴 및 핑거프린트 설정. |
+| OAuth 토큰 교환 | [`lib/token-exchange.mjs`](./lib/token-exchange.mjs) | OAuth 토큰 교환 헬퍼. |
+| Google 인증 | [`lib/google-auth-browser.mjs`](./lib/google-auth-browser.mjs) | 브라우저 기반 Google 인증 헬퍼. |
+| SMS 추상화 | [`lib/sms-provider.mjs`](./lib/sms-provider.mjs) | 플러거블 SMS 제공자 인터페이스. |
+| Antigravity 공유 | [`lib/antigravity-shared.mjs`](./lib/antigravity-shared.mjs) | Antigravity 도메인 공통 로직. |
+| 무료 프록시 | [`lib/free-proxy.mjs`](./lib/free-proxy.mjs) | 프록시 후보 조회 헬퍼. |
+| 검증 파이프라인 | [`lib/verification-pipeline.mjs`](./lib/verification-pipeline.mjs) | 검증 단계 파이프라인. |
+
+## 진입점 / API & Entry Points
+
+이 저장소는 NPM 패키지 라이브러리가 아니라 **스크립트 + MCP 서버 모음**이므로, "진입점" 은 라이브러리 export 가 아니라 **실행 가능한 스크립트와 MCP 도구**입니다.
+
+### MCP stdio 서버
+
+| 서버 / Server | 파일 / File | transport | 비고 / Note |
 |---|---|---|---|
-| MCP stdio 서버 (Gmail 도메인) | `account/gmail-creator-mcp.mjs` | stdio (`node ...mjs`) | stderr 전용 |
-| MCP stdio 서버 (OpenAI 도메인) | `openai/openai-creator-mcp.mjs` | stdio (`node ...mjs`) | stderr 전용 |
-| 배치 오케스트레이션 | `account/create-accounts.mjs`의 `main` | Node 스크립트 | stdout·stderr 모두 사용 가능 |
-| Antigravity 오케스트레이션 | `antigravity/antigravity-pipeline.mjs`의 `main` | Node 스크립트 | stdout·stderr 모두 사용 가능 |
-| OAuth 콜백 서버 | `lib/oauth-callback-server.mjs`의 `createCallbackServer` | 라이브러리 import | 호출자 정책 따름 |
-| 브라우저 부트스트랩 | `lib/browser-launch.mjs`의 `launchBrowser` | 라이브러리 import | 호출자 정책 따름 |
-| 프록시 정규화 | `lib/proxy-config.mjs`의 `createProxyConfig` | 라이브러리 import | 경고 메타데이터 |
-| CLI 인자 파서 | `lib/cli-args.mjs`의 `parseCliArgs` | 라이브러리 import | — |
+| Gmail creator MCP | [`account/gmail-creator-mcp.mjs`](./account/gmail-creator-mcp.mjs) | stdio | 도구 등록, 작업 관리, 멀티라인 CSV 파싱. stdout 은 MCP 전용. |
+| OpenAI creator MCP | [`openai/openai-creator-mcp.mjs`](./openai/openai-creator-mcp.mjs) | stdio | OpenAI 도메인 별도 표면. stdout 은 MCP 전용. |
 
-### 외부 의존성 / External dependencies
+### 주요 운영 스크립트 (도메인별)
 
-| 패키지 / Package | 용도 / Purpose |
+| 도메인 / Domain | 주요 파일 / Key files |
 |---|---|
-| `@gongrzhe/server-gmail-autoauth-mcp` | Gmail 자동 인증 MCP 백엔드 |
-| `@modelcontextprotocol/sdk` | MCP 서버 SDK |
-| `@playwright/mcp` | Playwright MCP 어댑터 |
-| `ghost-cursor-playwright` | 사람형 커서 시뮬레이션 |
-| `jsqr`, `pngjs` | QR·이미지 파싱 |
-| `rebrowser-playwright` | Playwright 패치 포크 |
-| `webdriverio` | Appium/WDIO 클라이언트 |
-| `ws` | WebSocket 클라이언트(CDP 등) |
+| Account / Gmail | `account/create-accounts.mjs`, `account/create-accounts-cdp.mjs`, `account/create-accounts-appium.mjs`, `account/create-accounts-adb.mjs`, `account/verify-account.mjs`, `account/verify-age.mjs`, `account/verify-all-accounts.mjs`, `account/warmup-account.mjs`, `account/check-account-exists.mjs` |
+| OAuth | `oauth/oauth-login.mjs`, `oauth/setup-gcp-oauth.mjs` |
+| OpenAI | `openai/create-accounts.mjs`, `openai/check-accounts.mjs` |
+| Antigravity | `antigravity/antigravity-pipeline.mjs`, `antigravity/antigravity-auth.mjs`, `antigravity/inject-vscdb-token.mjs`, `antigravity/manual-token-acquire.mjs`, `antigravity/unlock-features.mjs` |
+| Infrastructure | `account/infrastructure/setup-emulator.mjs`, `bin/setup_frida.sh`, `bin/setup-credentials.sh`, `bin/setup-1password-service-account.sh` |
 
----
+### 코드 맵 (Code map)
 
-## Quickstart / 사용 시작
+| 심볼 / Symbol | 종류 / Type | 위치 / Location | 역할 / Role |
+|---|---|---|---|
+| `main` | function | [`account/create-accounts.mjs`](./account/create-accounts.mjs) | 배치 오케스트레이션 진입점. |
+| `createAccountWithRetries` | function | [`account/create-accounts.mjs`](./account/create-accounts.mjs) | 단일 계정 흐름의 재시도/실패 정책. |
+| `Server` | top-level | [`account/gmail-creator-mcp.mjs`](./account/gmail-creator-mcp.mjs) | MCP 서버 셋업; 도구 등록·작업 관리·CSV 파싱. |
+| `parseAccountsCsv` | function | `account/gmail-creator-mcp.mjs`, [`antigravity/antigravity-pipeline.mjs`](./antigravity/antigravity-pipeline.mjs) | 멀티라인 허용 CSV 레코드 파서. |
+| `main` | function | [`antigravity/antigravity-pipeline.mjs`](./antigravity/antigravity-pipeline.mjs) | Antigravity 로컬 상태 오케스트레이션 진입점. |
+| `encodeOAuthTokenInfo` | function | [`antigravity/inject-vscdb-token.mjs`](./antigravity/inject-vscdb-token.mjs) | 로컬 상태 쓰기용 수동 protobuf 인코딩. |
+| `createCallbackServer` | function | [`lib/oauth-callback-server.mjs`](./lib/oauth-callback-server.mjs) | 타임아웃/종료 의미론을 갖춘 로컬 HTTP 콜백 서버. |
+| `launchBrowser` | function | [`lib/browser-launch.mjs`](./lib/browser-launch.mjs) | 공유 Playwright/Rebrowser 런치 래퍼. |
+| `parseCliArgs` | function | [`lib/cli-args.mjs`](./lib/cli-args.mjs) | 이메일/비밀번호 스크립트용 공유 단순 CLI 파서. |
+| `createProxyConfig` | function | [`lib/proxy-config.mjs`](./lib/proxy-config.mjs) | 프록시 옵션 정규화 및 경고 메타데이터. |
+| `Server` | top-level | [`openai/openai-creator-mcp.mjs`](./openai/openai-creator-mcp.mjs) | 별도 MCP stdio 서버 표면. |
 
-> 📋 이 섹션은 **로컬 개발 환경 구성**만 다룹니다. 자동화 워크플로우의 실행 절차는 의도적으로 본 README에 포함하지 않으며, `docs/`의 별도 문서 또는 도메인 `AGENTS.md`를 참조하십시오.
+## 빠른 시작 / Quickstart
 
-### 1. 요구 사항 / Requirements
-
-- Node.js (LTS 권장, ESM 지원 버전)
-- Linux 환경 권장(헤드리스 시나리오 가정이 다수 존재)
-- 필요 시 `adb` 및 Android 에뮬레이터/디바이스, Frida 서버
-
-### 2. 설치 / Install
+> 이 README 는 운영 플레이북을 제공하지 않습니다. 아래는 **환경 점검과 의존성 설치**까지의 표준 시퀀스입니다.
 
 ```bash
+# 1. 저장소 클론 후 의존성 설치
 npm install
-```
 
-`package-lock.json`이 커밋되어 있으므로 재현 가능한 설치가 가능합니다.
-
-### 3. 환경 점검 / Sanity check
-
-```bash
-# MCP 서버가 stdio에서 응답하는지 진단(직접 stdio 송수신은 자동화 클라이언트에 위임)
-node account/gmail-creator-mcp.mjs < /dev/null
-
-# 스모크 체크 실행
+# 2. MCP 서버를 자식 프로세스로 띄울 수 있는지 sanity check
 node tests/gmail-creator-mcp-smoke.mjs
+
+# 3. 문서 확인 후 도메인 진입점 실행
+#    (각 스크립트의 플래그와 입력은 docs/ 및 AGENTS.md 참고)
+node account/gmail-creator-mcp.mjs --help 2>/dev/null || true
 ```
 
-> ⚠️ MCP 서버는 stdout을 프로토콜 메시지 전용으로 사용합니다. 진단 로깅은 반드시 stderr로 보내야 합니다.
+자세한 운영 시퀀스는 [`docs/QUICKSTART.md`](./docs/QUICKSTART.md) 를 참고하세요.
 
----
+## 설정 / Configuration
 
-## 명령어 참조 / Commands Reference
+| 설정 영역 / Area | 위치 / Location | 비고 / Note |
+|---|---|---|
+| npm 의존성 | [`package.json`](./package.json) | MCP SDK, Playwright, WDIO, Frida 등. |
+| CSV 입력 | `complete.csv`, `openai-accounts.csv` | 멀티라인 허용 파서 사용. |
+| OAuth 자격 증명 | `oauth/`, `bin/setup-credentials.sh` | 로컬 자격 증명 셋업 스크립트. |
+| Antigravity 상태 | `antigravity/antigravity-auth-results.json`, `data/warmup-progress.json` | 로컬 상태 파일; 커밋 정책 확인 필요. |
+| 환경 변수 | 각 스크립트 내 `process.env` 참조 | 운영 시 추가 env 가 필요할 수 있음 (스크립트별 확인). |
+| 네트워크/프록시 | [`lib/proxy-config.mjs`](./lib/proxy-config.mjs) | 프록시 옵션 정규화. 스크립트별 구체 env 는 코드를 확인. |
+
+> 민감한 자격 증명이나 토큰은 **절대 저장소에 커밋하지 마세요**. 운영자가 로컬 환경에서 별도로 주입해야 합니다.
+
+## 명령 참조 / Commands Reference
 
 | 명령 / Command | 설명 / Description |
 |---|---|
-| `npm install` | 의존성 설치 |
-| `npm test` | 현재는 플레이스홀더(에러 후 비정상 종료) — `tests/`의 스모크 스크립트를 직접 실행 권장 |
-| `node account/gmail-creator-mcp.mjs` | Gmail 도메인 MCP stdio 서버 |
-| `node openai/openai-creator-mcp.mjs` | OpenAI 도메인 MCP stdio 서버 |
-| `node account/create-accounts.mjs` | 배치 오케스트레이션 진입점 |
-| `node antigravity/antigravity-pipeline.mjs` | Antigravity 오케스트레이션 진입점 |
-| `node oauth/oauth-login.mjs` | OAuth 로그인 협소 헬퍼 |
-| `bash bin/setup-credentials.sh` | 자격 증명 부트스트랩(로컬) |
-| `bash bin/setup_frida.sh` | Frida 환경 준비(로컬) |
-| `bash bin/setup-1password-service-account.sh` | 1Password 서비스 계정 부트스트랩(로컬) |
-| `bash bin/create-gmail.sh` | 로컬 래퍼(내부 사용) |
-| `node tests/gmail-creator-mcp-smoke.mjs` | MCP 스모크 체크 |
-| `node tests/qa-manual.mjs` | 수동 QA 시나리오 진입점 |
+| `npm install` | 의존성 설치. |
+| `npm test` | 현재 placeholder (`echo Error && exit 1`). MCP 스모크는 직접 실행. |
+| `node tests/gmail-creator-mcp-smoke.mjs` | Gmail MCP stdio 채널 sanity check. |
+| `node account/gmail-creator-mcp.mjs` | Gmail 도메인 MCP stdio 서버 기동. |
+| `node openai/openai-creator-mcp.mjs` | OpenAI 도메인 MCP stdio 서버 기동. |
+| `node account/create-accounts.mjs` | 배치 오케스트레이션 진입점. |
+| `node antigravity/antigravity-pipeline.mjs` | Antigravity 로컬 상태 오케스트레이션. |
+| `bash bin/setup_frida.sh` | Frida 환경 셋업. |
+| `bash bin/setup-credentials.sh` | 자격 증명 셋업. |
+| `bash bin/setup-1password-service-account.sh` | 1Password 서비스 계정 셋업. |
+| `bash bin/create-gmail.sh` | (참고용) Gmail 생성 셸 래퍼. |
 
----
+개별 스크립트 플래그는 해당 파일의 `process.argv` 파싱 부분을 직접 확인하세요 (대부분 [`lib/cli-args.mjs`](./lib/cli-args.mjs) 를 공유).
 
 ## 로컬 개발 / Local Development
 
-### 코딩 규약 / Conventions
+| 주제 / Topic | 가이드 / Guidance |
+|---|---|
+| Node 버전 | ESM + `@modelcontextprotocol/sdk` v1 호환 Node 권장 (LTS). |
+| Headless 모드 | Linux 서버에서 실행 시 headless 가정. X 서버 없이는 headed 모드가 동작하지 않을 수 있음. |
+| MCP 진단 로그 | **stderr 로만 출력.** stdout 은 MCP 메시지 전용. |
+| 의존성 추가 | [`package.json`](./package.json) 에 명시적으로 추가하고 `package-lock.json` 갱신. |
+| 새 운영 스크립트 | 도메인 디렉터리에 배치하고 `lib/` 헬퍼 재사용 우선. |
+| 기존 플래그 이름 | 편집 시 기존 flag 이름 유지 (많은 스크립트가 `process.argv` 를 직접 파싱). |
+| CSV 변경 | 멀티라인 허용 파서를 가정 — 새 필드 추가 시 파서 영향 확인. |
+| 산출물 | CSV/JSON/스크린샷/덤프는 로컬 산출물. `.gitignore` 정책 확인. |
 
-- 모든 스크립트는 ESM(`.mjs`)으로 작성합니다.
-- 도메인별 디렉터리(`account/`, `antigravity/`, `oauth/`, `openai/`, `lib/`)에 그룹화합니다. 프레임워크 계층이 아닌 운영 도메인 기준입니다.
-- 브라우저 플로우는 헤드리스 Linux 환경을 가정합니다. X 서버가 없는 환경에서 헤디드 모드를 가정하지 마십시오.
-- CLI 플래그는 `process.argv`에서 직접 파싱하는 스크립트가 많습니다. 기존 플래그 이름을 유지해 주십시오.
-- 공유 헬퍼(브라우저 부트스트랩, CLI 파서, OAuth 콜백, 프록시 정규화, 상태 파싱)는 `lib/`에서 우선 재사용하십시오.
-- MCP 서버 파일에서는 `console.log`로 진단을 출력하지 마십시오. stdout은 MCP 메시지 전용입니다.
-- CSV, JSON 토큰, 다운로드 키, 스크린샷, 덤프 등은 **로컬 산출물**이며 저장소에 커밋하지 마십시오.
-
-### 디렉터리 책임 / Directory responsibilities
-
-| 디렉터리 / Dir | 책임 / Responsibility | 금지 / Avoid |
-|---|---|---|
-| `account/` | 계정 도메인 스크립트와 MCP 표면 | 공유 로직 복제 |
-| `antigravity/` | 로컬 상태 파일, 토큰 주입, 서브프로세스 | 외부 API 직접 호출 |
-| `lib/` | 재사용 가능한 헬퍼 | 도메인 지식 포함 |
-| `oauth/` | OAuth 자격 증명·로그인 협소 래퍼 | 광범위 비즈니스 로직 |
-| `openai/` | OpenAI 도메인 스크립트와 MCP 표면 | `account/` 코드 의존 |
-| `bin/` | 셸 부트스트랩, URL 처리 | 비결정적 동작 |
-| `tests/` | 스모크 체크 | 광범위 통합 테스트 |
-| `docs/` | 운영 문서·분석 | 소스 코드 미러 |
-
----
+자세한 도메인별 규칙은 [`AGENTS.md`](./AGENTS.md) 와 각 하위 디렉터리의 `AGENTS.md` 를 참고하세요.
 
 ## 테스트 / Testing
 
-| 대상 / Target | 방법 / Method | 위치 / Location |
+| 검사 / Check | 명령 / Command | 비고 / Note |
 |---|---|---|
-| MCP 기본 동작 | 스크립트형 스모크 체크 | `tests/gmail-creator-mcp-smoke.mjs` |
-| 수동 QA | `qa-manual.mjs` 진입 | `tests/qa-manual.mjs` |
-| 루트 테스트 | 현재 플레이스홀더 | `package.json`의 `scripts.test` |
+| MCP stdio 스모크 | `node tests/gmail-creator-mcp-smoke.mjs` | MCP 메시지 채널 sanity check. |
+| 수동 QA | [`tests/qa-manual.mjs`](./tests/qa-manual.mjs) | 수동 점검 스크립트. |
+| `npm test` | `npm test` | 현재 placeholder — 위 항목으로 대체. |
 
-> 🔍 신규 헬퍼는 가능하면 `tests/` 아래에 스모크 체크를 추가해 회귀를 빠르게 감지하도록 합니다.
-
----
-
-## 유지보수자 / Maintainers
-
-| 항목 / Item | 값 / Value |
-|---|---|
-| 패키지명 / Package name | `gmail` |
-| 버전 / Version | `1.0.0` |
-| 라이선스 / License | ISC (`./LICENSE`) |
-| 작성자(공식) / Author (declared) | `package.json` 기준 미기재 — 도메인 `AGENTS.md`와 저장소 히스토리 참조 |
-| 유지보수 범위 / Maintenance scope | 내부 연구·진단 코드 베이스 |
-
-새로운 유지보수자는 먼저 `AGENTS.md`와 각 도메인의 `AGENTS.md`를 읽어 코드 표면과 규약을 파악한 뒤 작업을 시작해 주십시오.
-
----
+운영 시퀀스에 대한 자동 회귀 테스트는 이 저장소에서 제공되지 않습니다 (내부/리서치 단계).
 
 ## 기여 / Contributing
 
-기여 절차는 [`CONTRIBUTING.md`](./CONTRIBUTING.md)를 참조하십시오. 일반 가이드라인:
+기여 절차는 [`CONTRIBUTING.md`](./CONTRIBUTING.md) 를 참고하세요. 일반 가이드:
 
-- 도메인 디렉터리의 자식 `AGENTS.md`를 먼저 확인합니다.
-- 공유 로직은 `lib/`의 기존 헬퍼 재사용을 우선합니다.
-- CLI 플래그 이름과 시그니처는 기존 호출자와 호환되도록 유지합니다.
-- MCP 서버 변경 시 stdout 사용(프로토콜)과 stderr 사용(진단) 경계를 지킵니다.
-- 로컬 산출물(CSV, 토큰 JSON, 키, 스크린샷, 덤프)은 커밋하지 않습니다.
+- 새 운영 스크립트는 도메인 디렉터리(`account/`, `oauth/`, `openai/`, `antigravity/`, `account/infrastructure/`)에 추가.
+- `lib/` 의 헬퍼를 우선 재사용. 헬퍼를 복제하지 말 것.
+- CLI 플래그 이름을 임의로 변경하지 말 것.
+- MCP 서버 파일에서는 `console.log` 로 진단 메시지를 출력하지 말 것 (stdout 은 MCP 전용).
+- CSV 파싱은 멀티라인 허용 동작을 유지.
+- 새 의존성은 [`package.json`](./package.json) 에 명시.
 
----
+## 유지보수자 / Maintainers & Contact
 
-## 추가 문서 / Further Documentation
+| 역할 / Role | 위치 / Where |
+|---|---|
+| 저장소 규칙·구조 안내 | [`AGENTS.md`](./AGENTS.md) |
+| 계정 도메인 규칙 | [`account/AGENTS.md`](./account/AGENTS.md) |
+| Antigravity 도메인 규칙 | [`antigravity/AGENTS.md`](./antigravity/AGENTS.md) |
+| OpenAI 도메인 규칙 | [`openai/AGENTS.md`](./openai/AGENTS.md), [`openai/README.md`](./openai/README.md) |
+| 라이브러리 도메인 규칙 | [`lib/AGENTS.md`](./lib/AGENTS.md) |
 
-| 문서 / Document | 위치 / Path | 내용 / Content |
-|---|---|---|
-| 프로젝트 지식 베이스 | `AGENTS.md` | 구조, 코드 맵, 규약 |
-| 계정 도메인 가이드 | `account/AGENTS.md` | Gmail 도메인 진입점 규약 |
-| Antigravity 가이드 | `antigravity/AGENTS.md` | 토큰·상태 유지보수 규약 |
-| OpenAI 가이드 | `openai/AGENTS.md` | OpenAI 도메인 규약 |
-| OpenAI 도메인 README | `openai/README.md` | OpenAI 표면 메모 |
-| 라이브러리 가이드 | `lib/AGENTS.md` | 공유 헬퍼 표면과 재사용 규칙 |
-| 빠른 시작 | `docs/QUICKSTART.md` | 운영 컨텍스트 보조 문서 |
-| 대안 SMS 제공자 | `docs/ALTERNATIVE-SMS-PROVIDERS.md` | SMS 추상화 계층 메모 |
-| ADB Gmail 생성 메모 | `docs/adb-gmail-creation.md` | ADB 기반 진단 메모 |
-| 인증 우회 분석 | `docs/verification-bypass-analysis.md` | 분석 자료(런북 아님) |
-
----
+> 이 저장소는 내부/리서치 단계이므로 별도 외부 연락 채널이 명시되어 있지 않습니다. 운영 관련 문의는 저장소 이슈 트래커를 통해 주세요.
 
 ## 라이선스 / License
 
-이 저장소는 [ISC License](./LICENSE) 하에 배포됩니다. 사용 시 각 플랫폼의 이용약관과 관련 법규를 준수할 책임은 운영자에게 있습니다.
+이 저장소는 [ISC 라이선스](./LICENSE) 하에 배포됩니다. 사용 전 라이선스 전문을 확인하세요.
+
+## 추가 문서 / Further Documentation
+
+| 문서 / Document | 경로 / Path | 용도 / Purpose |
+|---|---|---|
+| 빠른 시작 | [`docs/QUICKSTART.md`](./docs/QUICKSTART.md) | 운영 진입 가이드. |
+| 대체 SMS 제공자 분석 | [`docs/ALTERNATIVE-SMS-PROVIDERS.md`](./docs/ALTERNATIVE-SMS-PROVIDERS.md) | SMS 제공자 비교·대안 검토. |
+| ADB 기반 Gmail 생성 | [`docs/adb-gmail-creation.md`](./docs/adb-gmail-creation.md) | ADB 경로 운영 세부사항. |
+| 인증 우회 분석 | [`docs/verification-bypass-analysis.md`](./docs/verification-bypass-analysis.md) | 검증 메커니즘 분석. 책임 있는 사용 정책과 함께 참고. |
+| OpenAI 도메인 README | [`openai/README.md`](./openai/README.md) | OpenAI 도메인 세부 안내. |
+| 저장소 규칙 | [`AGENTS.md`](./AGENTS.md) | 구조·코드 맵·규약. |
+| 기여 절차 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) | 기여 가이드. |
+
+---
+
+> ⚠️ **상태 고지 / Status notice.** 이 코드 베이스는 **production-ready 가 아니며**, 운영 도메인의 유지보수와 진단을 위한 내부/리서치 표면입니다. 공개된 실행 스크립트의 운영 사용 전, [`docs/`](./docs/) 의 관련 분석 문서와 본 상단의 책임 있는 사용 고지를 반드시 확인하세요.
